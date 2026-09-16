@@ -42,17 +42,14 @@ class TeamLingoTests(unittest.TestCase):
         governance._load.cache_clear()
         self.temporary_directory.cleanup()
 
-    def write_config(self, repo_ids=("repo_one",), chats=("oc_allowed",)):
+    def write_config(self, repo_ids=("repo_one",)):
         repos = "\n".join(f"      - {item}" for item in repo_ids) or "      []"
-        allowed = "\n".join(f"      - {item}" for item in chats) or "      []"
         (self.home / "config.yaml").write_text(
             "team_governance:\n"
             "  enabled: true\n"
             "  lingo:\n"
             "    repo_ids:\n"
-            f"{repos}\n"
-            "    allowed_chat_ids:\n"
-            f"{allowed}\n",
+            f"{repos}\n",
             encoding="utf-8",
         )
         governance._load.cache_clear()
@@ -60,16 +57,21 @@ class TeamLingoTests(unittest.TestCase):
     def bind(self, platform="feishu", chat_id="oc_allowed"):
         set_session_vars(platform=platform, chat_id=chat_id, user_id="ou_member", message_id="om_test")
 
-    def test_rejects_unconfigured_repo_and_unauthorized_context_without_calling_cli(self):
+    def test_rejects_unconfigured_repo_without_calling_cli(self):
         runner = FakeRunner([])
-        self.bind(platform="slack")
-        self.assertFalse(query("术语", run=runner)["success"])
-        self.bind(chat_id="oc_other")
-        self.assertFalse(query("术语", run=runner)["success"])
         self.write_config(repo_ids=())
         self.bind()
         self.assertFalse(query("术语", run=runner)["success"])
         self.assertEqual(runner.calls, [])
+
+    def test_lookup_is_available_in_any_chat_platform_and_without_session(self):
+        for platform, chat in (("feishu", "oc_other"), ("feishu", "ou_private"), ("acp", ""), ("cli", ""), ("slack", ""), ("", "")):
+            with self.subTest(platform=platform, chat=chat):
+                reset_session_vars()
+                self.bind(platform=platform, chat_id=chat)
+                runner = FakeRunner([{"data": {"results": []}}])
+                self.assertTrue(query("术语", run=runner)["success"])
+                self.assertEqual(len(runner.calls), 1)
 
     def test_validates_word_length(self):
         runner = FakeRunner([])

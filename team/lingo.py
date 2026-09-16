@@ -1,4 +1,4 @@
-"""Read-only project glossary lookup for authorized Lark team chats."""
+"""Read-only project glossary lookup available across Hermes entry points."""
 
 from __future__ import annotations
 
@@ -19,28 +19,19 @@ def _failure(message: str) -> dict[str, Any]:
     return {"success": False, "found": False, "error": message, "matches": []}
 
 
-def _settings() -> tuple[list[str], frozenset[str]] | str:
+def _settings() -> list[str] | str:
     policy = governance.config().get("team_governance", {})
     lingo = policy.get("lingo", {}) if isinstance(policy, dict) else {}
     if not isinstance(lingo, dict):
         return "项目词典未配置。"
     repo_ids = lingo.get("repo_ids", [])
-    allowed_chat_ids = lingo.get("allowed_chat_ids", [])
     if (
         not isinstance(repo_ids, list)
         or not repo_ids
         or not all(isinstance(item, str) and item.strip() for item in repo_ids)
     ):
         return "项目词典未配置可查询的词库。"
-    if (
-        not isinstance(allowed_chat_ids, list)
-        or not allowed_chat_ids
-        or not all(isinstance(item, str) and item.strip() for item in allowed_chat_ids)
-    ):
-        return "项目词典未配置授权群聊。"
-    return list(dict.fromkeys(item.strip() for item in repo_ids)), frozenset(
-        item.strip() for item in allowed_chat_ids
-    )
+    return list(dict.fromkeys(item.strip() for item in repo_ids))
 
 
 def _invoke(run: Callable[..., subprocess.CompletedProcess], command: list[str]) -> dict[str, Any] | str:
@@ -134,15 +125,10 @@ def query(word: str, run: Callable[..., subprocess.CompletedProcess] = governanc
     if not isinstance(word, str) or not 1 <= len(word.strip()) <= 100:
         return _failure("查询词长度必须为 1 到 100 个字符。")
     word = word.strip()
-    if governance.bound("HERMES_SESSION_PLATFORM") != "feishu":
-        return _failure("项目词典只能从授权的 Lark 群聊查询。")
     settings = _settings()
     if isinstance(settings, str):
         return _failure(settings)
-    repo_ids, allowed_chat_ids = settings
-    chat_id = governance.bound("HERMES_SESSION_CHAT_ID")
-    if not chat_id or chat_id not in allowed_chat_ids:
-        return _failure("当前群聊未获项目词典查询授权。")
+    repo_ids = settings
 
     candidates: list[tuple[str, str, str]] = []
     seen: set[str] = set()
