@@ -1,6 +1,53 @@
-# 此个人 fork 的部署维护约定
+# Hermes Team 项目说明与维护约定
 
-本仓库是用户 Docker Hermes 的完整源代码归档与后续维护入口。维护当前 main，不创建分支。只推送 origin（用户自己的 fork），不推送上游或自动开 PR。Docker/团队定制按 team/AGENTS.md 与 team/README.md 验证；用户要求最小必要验证，不默认运行不相关 Desktop 全套或发布流水线。下方上游跨仓库/分支/PR流程用于向上游贡献，不能覆盖用户本次范围。
+## 项目用途
+
+本仓库是面向整个项目团队的 Hermes fork，主要通过 Lark 群聊和话题为团队提供共享 AI 助手服务。主要使用者是项目成员，主要使用入口是项目的 Lark 对话。
+
+当前重点场景：
+
+- 团队成员在 Lark 群里 @ 机器人提出问题、讨论需求、查询资料和推进项目工作。
+- 机器人以发起消息建立话题，相关追问、回复和上下文归入同一话题，减少群内杂乱；不同话题应保持上下文隔离。
+- 结合 Lark 文档、知识库、词典、任务及 Meegle，协助整理信息、澄清需求、拆解工作和跟进交付。
+- 通过已安装的技能和插件提供生图等团队所需能力。
+
+功能设计、权限处理和验收都应考虑多人共享使用：明确请求者、当前应用身份和操作对象，不把管理员或某位成员的个人授权当作全体成员的授权。不能因单人测试成功就认为团队使用链路已覆盖。
+
+## 当前部署与源码入口
+
+- 完整开发源码：`/Users/apple/CodeProjects/hermes-agent`。修改从本仓库开始，通过 Git 留下可审查记录。
+- 正式运行方式：macOS 宿主机上的 Docker，容器名 `hermes-team`，核心运行代码位于容器 `/opt/hermes`。
+- Docker 构建与部署入口：仓库根目录 `Dockerfile`、`team/compose.yaml`。容器内文件是构建产物，不作为长期源码编辑入口。
+- 团队定制：Lark 适配器在 `plugins/platforms/feishu/adapter.py`；插件、技能、Tasks 桥接、依赖锁和测试集中在 `team/`。
+- 本机运行状态目录：`~/.local/share/hermes-team`；其中 `data/` 挂载为容器 `/opt/data`。配置、授权、凭据、会话、日志和产物保存在此，不能提交到 Git。
+- 共享工作区：`~/HermesTeamWorkspace`，挂载为容器 `/workspace`。
+- Lark Tasks 还依赖宿主机上的 `com.hermes-team.lark-acp` 和 `com.hermes-team.lark-tasks` 两项 launchd 正式服务。部署或清理时应同时考虑这条链路。
+
+## 上下游与变更范围
+
+- `origin`：`LiuYangArt/hermes-agent`，我们的官方 fork，保存团队定制提交。
+- `cn-upstream`：`Eynzof/Hermes-CN-Core`，当前部署的直接上游，日常同步以它为准。
+- `upstream`：`NousResearch/hermes-agent`，官方源头，保留 fork 关系与提交历史。
+- 用户未要求时不创建分支；只推送自己的 `origin`，不自动向上游推送或创建 PR。
+- 优先维护 Lark 团队使用链路和 Docker 部署的稳定性。根据需求确定改动范围，不因上游同时提供桌面端或其他平台就自动扩大工作范围。
+- 同步上游通过审查与合并处理冲突，保留我们的提交，不通过强制重置丢弃团队改动。
+
+## 验证与交付
+
+在仓库根目录执行：
+
+- 核对运行资产并执行团队针对性回归：`python3 team/manage.py verify`。
+- 构建镜像：`docker compose -f team/compose.yaml build --build-arg HERMES_GIT_SHA="$(git rev-parse HEAD)"`。
+- 安装受管插件、技能和桥接源码：`python3 team/manage.py install-assets`。
+- 加载正式镜像：`docker compose -f team/compose.yaml up -d --no-deps hermes-team`。
+
+先完成与改动有关的检查和新镜像验证，再更新正式资产、部署并回读核对。纯文档修改只做文档差异检查，不重建或重启服务。Core 行为改动按需追加上游 `scripts/run_tests.sh` 中相关测试。
+
+Lark 功能以真实使用入口为验收标准：收到请求、执行操作、回复进入正确话题或任务、写入结果可回读。测试消息或数据操作须在用户授权范围内进行，优先复用已有测试话题和任务；未覆盖的真实链路应明确报告。
+
+日志位于运行状态目录的 `data/logs/gateway.log` 和 `task-bridge/runtime/service-*.log`，读取或分享前脱敏。验证产物保存在本地 `team/.local/` 或本次任务的交付目录。完成后清理临时测试进程，保留 Docker 网关和 Tasks 正式服务。
+
+部署细节见 `team/AGENTS.md` 和 `team/README.md`。以下上游指南用于理解 Hermes 架构及贡献规范；其中跨仓库、建分支、全套测试、PR 和发布流程仅在对应任务范围内适用，不覆盖用户的明确要求与上述团队部署约定。
 
 # Hermes Agent - Development Guide
 
