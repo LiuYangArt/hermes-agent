@@ -16957,7 +16957,42 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     f"{message_text}"
                 )
 
-        if getattr(event, "reply_to_text", None) and event.reply_to_message_id:
+        if event.reply_to_message_id and source.platform == Platform.FEISHU:
+            reply_text = getattr(event, "reply_to_text", None)
+            reply_author = (
+                getattr(event, "reply_to_author_name", None)
+                or getattr(event, "reply_to_author_id", None)
+                or "unknown (author metadata unavailable)"
+            )
+            safe_reply_id = neutralize_untrusted_inline_text(str(event.reply_to_message_id))
+            safe_reply_author = neutralize_untrusted_inline_text(str(reply_author))
+            if reply_text:
+                reply_context_limit = 12_000
+                omitted_chars = max(0, len(reply_text) - reply_context_limit)
+                reply_content = reply_text[:reply_context_limit]
+                truncation_notice = (
+                    f"\n[Quoted message truncated: {omitted_chars} characters omitted.]"
+                    if omitted_chars
+                    else ""
+                )
+                message_text = (
+                    "[Referenced Lark message]\n"
+                    f"Source message ID: {safe_reply_id}\n"
+                    f"Author: {safe_reply_author}\n"
+                    f"Content:\n{reply_content}{truncation_notice}\n"
+                    "[End referenced Lark message]\n\n"
+                    f"{message_text}"
+                )
+            else:
+                message_text = (
+                    "[Referenced Lark message]\n"
+                    f"Source message ID: {safe_reply_id}\n"
+                    f"Author: {safe_reply_author}\n"
+                    "Content unavailable: the referenced message could not be read.\n"
+                    "[End referenced Lark message]\n\n"
+                    f"{message_text}"
+                )
+        elif getattr(event, "reply_to_text", None) and event.reply_to_message_id:
             # Always inject the reply-to pointer — even when the quoted text
             # already appears in history. The prefix isn't deduplication, it's
             # disambiguation: it tells the agent *which* prior message the user

@@ -1542,7 +1542,10 @@ def check_feishu_requirements() -> bool:
         return False
 
 
-class FeishuAdapter(BasePlatformAdapter):
+from .thread_router import ThreadConversationMixin
+
+
+class FeishuAdapter(ThreadConversationMixin, BasePlatformAdapter):
     """Feishu/Lark bot adapter."""
 
     supports_code_blocks = True  # Feishu renders fenced code blocks
@@ -2165,6 +2168,10 @@ class FeishuAdapter(BasePlatformAdapter):
 
         try:
             approval_id = next(self._approval_counter)
+            requester = getattr(self, "_topic_requesters", {}).get(session_key)
+            if requester:
+                allow_session = False
+                allow_permanent = False
 
             def _btn(label: str, action_name: str, btn_type: str = "default") -> dict:
                 return {
@@ -2213,6 +2220,7 @@ class FeishuAdapter(BasePlatformAdapter):
                     "session_key": session_key,
                     "message_id": result.message_id or "",
                     "chat_id": chat_id,
+                    "requester": requester or "",
                 }
             return result
         except Exception as exc:
@@ -2690,6 +2698,14 @@ class FeishuAdapter(BasePlatformAdapter):
                 self._pending_drain_scheduled = False
 
     async def _handle_message_event_data(self, data: Any) -> None:
+        message = getattr(getattr(data, "event", None), "message", None)
+        if message is not None and getattr(message, "chat_type", "p2p") != "p2p":
+            async with self._get_chat_lock("inbound:" + str(getattr(message, "chat_id", ""))):
+                await self._handle_message_event_data_ordered(data)
+        else:
+            await self._handle_message_event_data_ordered(data)
+
+    async def _handle_message_event_data_ordered(self, data: Any) -> None:
         """Shared inbound message handling for websocket and webhook transports."""
         event = getattr(data, "event", None)
         message = getattr(event, "message", None)
@@ -2703,10 +2719,33 @@ class FeishuAdapter(BasePlatformAdapter):
             logger.debug("[Feishu] Dropping duplicate/missing message_id: %s", message_id)
             return
 
-        reason = self._admit(sender, message)
+        is_group = getattr(message, "chat_type", "p2p") != "p2p"
+        managed = is_group and not _is_bot_sender(sender)
+        reason = self._admit(sender, message, thread_routing=managed)
         if reason is not None:
             logger.debug("[Feishu] dropping inbound event: %s", reason)
             return
+
+        route = None
+        if managed:
+            store = self._thread_store()
+            if store.seen(message_id):
+                return
+            normalized = normalize_feishu_message(
+                message_type=getattr(message, "message_type", "text"),
+                raw_content=getattr(message, "content", ""),
+                mentions=getattr(message, "mentions", None), bot=self._bot_identity(),
+            )
+            route = self._route_thread_message(message, sender.sender_id, normalized)
+            if route is None:
+                return
+            store.mark_seen(message_id)
+            if not route["respond"]:
+                await self._remember_thread_background(message, sender.sender_id, normalized, route)
+                if route["listen"]:
+                    await self.send(message.chat_id, "已进入旁听；再次 @Hermes 即可恢复你的免 @ 对话。",
+                                    reply_to=message_id, metadata={"thread_id": route["topic"]})
+                return
 
         chat_type = getattr(message, "chat_type", "p2p")
         await self._process_inbound_message(
@@ -2716,7 +2755,10 @@ class FeishuAdapter(BasePlatformAdapter):
             chat_type=chat_type,
             message_id=message_id,
             is_bot=_is_bot_sender(sender),
+            thread_route=route,
         )
+
+    _thread_strip_self = staticmethod(_strip_edge_self_mentions)
 
     def _on_message_read_event(self, data: P2ImMessageMessageReadV1) -> None:
         """Ignore read-receipt events that Hermes does not act on."""
@@ -2882,6 +2924,10 @@ class FeishuAdapter(BasePlatformAdapter):
         operator = getattr(event, "operator", None)
         open_id = str(getattr(operator, "open_id", "") or "")
         sender_id = SimpleNamespace(open_id=open_id, user_id=str(getattr(operator, "user_id", "") or ""))
+        if state.get("requester") and state["requester"] not in {open_id, sender_id.user_id}:
+            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
+        if state.get("requester") and choice not in {"once", "deny"}:
+            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
         if not self._allow_group_message(sender_id, state.get("chat_id", ""), is_bot=False):
             logger.warning("[Feishu] Unauthorized approval click by %s", open_id or "<unknown>")
             return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
@@ -2993,6 +3039,8 @@ class FeishuAdapter(BasePlatformAdapter):
         state = self._approval_state.get(approval_id)
         if not state:
             logger.debug("[Feishu] Approval %s already resolved or unknown", approval_id)
+            return
+        if state.get("requester") and (state["requester"] != open_id or choice not in {"once", "deny"}):
             return
         if not self._is_interactive_operator_authorized(open_id):
             logger.warning("[Feishu] Unauthorized approval click by %s for approval %s", open_id or "<unknown>", approval_id)
@@ -3340,6 +3388,11 @@ class FeishuAdapter(BasePlatformAdapter):
     async def on_processing_complete(
         self, event: MessageEvent, outcome: ProcessingOutcome
     ) -> None:
+        route = (getattr(event, "metadata", None) or {}).get("feishu_thread")
+        if route and outcome is ProcessingOutcome.SUCCESS:
+            self._thread_store().consume(
+                event.source.chat_id, route["topic"], event.metadata.get("feishu_background_ids", []),
+            )
         if not self._reactions_enabled():
             return
         message_id = event.message_id
@@ -3417,6 +3470,7 @@ class FeishuAdapter(BasePlatformAdapter):
         chat_type: str,
         message_id: str,
         is_bot: bool = False,
+        thread_route: Optional[dict] = None,
     ) -> None:
         text, inbound_type, media_urls, media_types, mentions = await self._extract_message_content(message)
 
@@ -3426,6 +3480,8 @@ class FeishuAdapter(BasePlatformAdapter):
                 inbound_type = MessageType.COMMAND
 
         # Guard runs post-strip so a pure "@Bot" message (stripped to "") is dropped.
+        if inbound_type == MessageType.TEXT and not text and not media_urls and thread_route:
+            text = "我已 @ 你。若我引用了消息，请先询问我希望如何处理；否则简短告知已就绪。"
         if inbound_type == MessageType.TEXT and not text and not media_urls:
             logger.debug("[Feishu] Ignoring empty text message id=%s", message_id)
             return
@@ -3439,6 +3495,8 @@ class FeishuAdapter(BasePlatformAdapter):
         thread_id = getattr(message, "root_id", None) or getattr(message, "thread_id", None) or None
         if chat_type == "group" and not thread_id:
             thread_id = message_id
+        if thread_route:
+            thread_id = thread_route["topic"]
         reply_to_message_id = (
             getattr(message, "parent_id", None)
             or getattr(message, "upper_message_id", None)
@@ -3446,6 +3504,9 @@ class FeishuAdapter(BasePlatformAdapter):
             or None
         )
         reply_to_text = await self._fetch_message_text(reply_to_message_id) if reply_to_message_id else None
+        reply_author_id, reply_author_name = getattr(self, "_message_author_cache", {}).get(
+            reply_to_message_id, (None, None),
+        )
 
         sender_primary = (
             getattr(sender_id, "open_id", None)
@@ -3488,13 +3549,19 @@ class FeishuAdapter(BasePlatformAdapter):
             media_types=media_types,
             reply_to_message_id=reply_to_message_id,
             reply_to_text=reply_to_text,
+            reply_to_author_id=reply_author_id,
+            reply_to_author_name=reply_author_name,
             channel_prompt=self._resolve_channel_prompt(chat_id, thread_id or None),
             timestamp=datetime.now(),
+            metadata={"feishu_thread": thread_route} if thread_route else {},
         )
         await self._dispatch_inbound_event(normalized)
 
     async def _dispatch_inbound_event(self, event: MessageEvent) -> None:
         """Apply Feishu-specific burst protection before entering the base adapter."""
+        if event.metadata.get("feishu_thread"):
+            await self._enqueue_thread_turn(event)
+            return
         if event.message_type == MessageType.TEXT and not event.is_command():
             await self._enqueue_text_event(event)
             return
@@ -3530,6 +3597,7 @@ class FeishuAdapter(BasePlatformAdapter):
             and existing.reply_to_message_id == incoming.reply_to_message_id
             and existing.reply_to_text == incoming.reply_to_text
             and existing.source.thread_id == incoming.source.thread_id
+            and existing.source.user_id == incoming.source.user_id
         )
 
     async def _enqueue_media_event(self, event: MessageEvent) -> None:
@@ -3838,6 +3906,7 @@ class FeishuAdapter(BasePlatformAdapter):
             existing.reply_to_message_id == incoming.reply_to_message_id
             and existing.reply_to_text == incoming.reply_to_text
             and existing.source.thread_id == incoming.source.thread_id
+            and existing.source.user_id == incoming.source.user_id
         )
 
     async def _enqueue_text_event(self, event: MessageEvent) -> None:
@@ -4370,8 +4439,14 @@ class FeishuAdapter(BasePlatformAdapter):
     async def _fetch_message_text(self, message_id: str) -> Optional[str]:
         if not self._client or not message_id:
             return None
+        author_cache = getattr(self, "_message_author_cache", None)
+        if author_cache is None:
+            author_cache = OrderedDict()
+            self._message_author_cache = author_cache
         if message_id in self._message_text_cache:
             self._message_text_cache.move_to_end(message_id)
+            if message_id in author_cache:
+                author_cache.move_to_end(message_id)
             return self._message_text_cache[message_id]
         try:
             request = self._build_get_message_request(message_id)
@@ -4383,6 +4458,9 @@ class FeishuAdapter(BasePlatformAdapter):
                 return None
             items = getattr(getattr(response, "data", None), "items", None) or []
             parent = items[0] if items else None
+            if parent is None:
+                logger.warning("[Feishu] Message lookup returned no item for %s", message_id)
+                return None
             body = getattr(parent, "body", None)
             msg_type = getattr(parent, "msg_type", "") or ""
             raw_content = getattr(body, "content", "") or ""
@@ -4392,9 +4470,21 @@ class FeishuAdapter(BasePlatformAdapter):
                 raw_content=raw_content,
                 mentions=parent_mentions,
             )
+            sender = getattr(parent, "sender", None)
+            author_id = str(getattr(sender, "id", "") or "").strip()
+            author_name = (
+                str(getattr(sender, "name", "") or "").strip()
+                or await self._resolve_sender_name_from_api(
+                    author_id,
+                    is_bot=str(getattr(sender, "sender_type", "") or "") in {"app", "bot"},
+                )
+                or None
+            )
             self._message_text_cache[message_id] = text
+            author_cache[message_id] = (author_id or None, author_name)
             while len(self._message_text_cache) > _FEISHU_MESSAGE_TEXT_CACHE_SIZE:
-                self._message_text_cache.popitem(last=False)
+                evicted_message_id, _ = self._message_text_cache.popitem(last=False)
+                author_cache.pop(evicted_message_id, None)
             return text
         except Exception:
             logger.warning("[Feishu] Failed to fetch parent message %s", message_id, exc_info=True)
@@ -4416,7 +4506,13 @@ class FeishuAdapter(BasePlatformAdapter):
         if normalized.text_content:
             return normalized.text_content
         placeholder = normalized.metadata.get("placeholder_text") if isinstance(normalized.metadata, dict) else None
-        return str(placeholder).strip() or None
+        placeholder_text = str(placeholder).strip()
+        if normalized.relation_kind == "image":
+            return "[Referenced image; image content was not read]"
+        if normalized.relation_kind in {"file", "audio", "media"}:
+            label = placeholder_text or "[Attachment]"
+            return f"{label} (attachment content was not read)"
+        return placeholder_text or None
 
     @staticmethod
     def _default_image_media_type(ext: str) -> str:
@@ -4436,7 +4532,7 @@ class FeishuAdapter(BasePlatformAdapter):
     # Inbound admission
     # =========================================================================
 
-    def _admit(self, sender: Any, message: Any) -> Optional[RejectReason]:
+    def _admit(self, sender: Any, message: Any, *, thread_routing: bool = False) -> Optional[RejectReason]:
         sender_ids = _sender_identity(sender)
         self_ids = frozenset(v for v in (self._bot_open_id, self._bot_user_id) if v)
         is_bot = _is_bot_sender(sender)
@@ -4479,7 +4575,7 @@ class FeishuAdapter(BasePlatformAdapter):
             getattr(sender, "sender_id", None), chat_id, is_bot=is_bot,
         ):
             return "group_policy_rejected"
-        if require_mention and not self._mentions_self(message):
+        if require_mention and not thread_routing and not self._mentions_self(message):
             return "group_policy_rejected"
         return None
 
@@ -5160,6 +5256,16 @@ class FeishuAdapter(BasePlatformAdapter):
                             reply_to=None,
                             metadata=metadata,
                         )
+                topic = (metadata or {}).get("thread_id")
+                if topic and self._response_succeeded(response) and hasattr(self, "_topic_state"):
+                    delivery = getattr(response, "data", None)
+                    actual_thread = getattr(delivery, "thread_id", None)
+                    if actual_thread:
+                        existing = self._topic_state.resolve(chat_id, thread_id=actual_thread)
+                        if existing is None or existing == topic:
+                            self._topic_state.bind(chat_id, topic, (actual_thread,))
+                        else:
+                            logger.warning("[Feishu] Reply belongs to an already managed topic; preserving existing conversation mapping")
                 return response
             except Exception as exc:
                 last_error = exc

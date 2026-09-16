@@ -2,6 +2,27 @@ import json
 import subprocess
 
 
+def _shared_group_command(command):
+    from gateway.session_context import get_session_env
+
+    if (get_session_env("HERMES_SESSION_PLATFORM") != "feishu"
+            or get_session_env("HERMES_SESSION_CHAT_TYPE") not in {"group", "thread", "channel"}):
+        return command
+    resource = command[1]
+    if resource in {"auth", "config", "profile", "update", "event"} or resource.startswith("-"):
+        raise ValueError("群聊不能修改共享登录、应用配置或启动事件监听；请由管理员在部署端处理。")
+    for index, word in enumerate(command[2:], 2):
+        if word == "--profile" or word.startswith("--profile="):
+            raise ValueError("群聊不能切换应用或个人授权配置。")
+        if word == "--as" and (index + 1 >= len(command) or command[index + 1] != "bot"):
+            raise ValueError("团队群聊使用机器人身份，不能继承任何成员的个人授权。")
+        if word.startswith("--as=") and word != "--as=bot":
+            raise ValueError("团队群聊使用机器人身份，不能继承任何成员的个人授权。")
+    if resource not in {"schema", "skills", "help", "whoami"} and "--as" not in command and "--as=bot" not in command:
+        command = [*command, "--as", "bot"]
+    return command
+
+
 def register(ctx):
     schema = {
         "name": "lark_cli",
@@ -32,6 +53,10 @@ def register(ctx):
         command.extend(arguments)
         if any("\x00" in item for item in command):
             return json.dumps({"success": False, "error": "NUL argument rejected"})
+        try:
+            command = _shared_group_command(command)
+        except ValueError as exc:
+            return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)
         try:
             result = subprocess.run(command, capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL, cwd="/workspace")
         except subprocess.TimeoutExpired:

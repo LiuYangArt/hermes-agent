@@ -54,17 +54,18 @@ def install():
 def verify():
     mismatches = [str(source.relative_to(REPO)) for source,destination in assets()
                   if not destination.is_file() or source.read_bytes()!=destination.read_bytes()]
-    core = 'plugins/platforms/feishu/adapter.py'
-    code = 'import hashlib;from pathlib import Path;print(hashlib.sha256(Path("/opt/hermes/'+core+'").read_bytes()).hexdigest())'
-    actual = run(['docker','exec',CONTAINER,'/opt/hermes/.venv/bin/python','-c',code],capture_output=True).stdout.strip()
-    expected = hashlib.sha256((REPO/core).read_bytes()).hexdigest()
-    if actual != expected:
-        mismatches.append(core)
+    for core in ('plugins/platforms/feishu/adapter.py', 'plugins/platforms/feishu/thread_router.py',
+                 'plugins/platforms/feishu/thread_state.py', 'gateway/run.py'):
+        code = 'import hashlib;from pathlib import Path;print(hashlib.sha256(Path("/opt/hermes/'+core+'").read_bytes()).hexdigest())'
+        actual = run(['docker','exec',CONTAINER,'/opt/hermes/.venv/bin/python','-c',code],capture_output=True).stdout.strip()
+        expected = hashlib.sha256((REPO/core).read_bytes()).hexdigest()
+        if actual != expected:
+            mismatches.append(core)
     if mismatches:
         raise SystemExit('Source/deployment differences:\n'+'\n'.join(mismatches))
     temp_home = '/tmp/hermes-source-check-'+uuid.uuid4().hex
     try:
-        for test in ('test_lark_threads.py','test_helius_image_tool.py'):
+        for test in ('test_lark_threads.py','test_helius_image_tool.py','test_thread_conversations.py','test_lark_identity.py'):
             run(['docker','exec','-i','-e','HERMES_HOME='+temp_home,CONTAINER,'/opt/hermes/.venv/bin/python'],input=(TEAM/'tests'/test).read_text())
         bridge = STATE/'task-bridge/node_modules/@luckyterry/aamp-acp-bridge/dist/acpx-client.js'
         if not bridge.is_file():
@@ -74,7 +75,7 @@ def verify():
             raise SystemExit('Tasks bridge approval protection is missing.')
     finally:
         run(['docker','exec',CONTAINER,'rm','-rf',temp_home])
-    print(json.dumps({'source_matches_deployment':True,'assets_checked':sum(1 for _ in assets()),'targeted_tests':9,'tasks_permission_patch':True}))
+    print(json.dumps({'source_matches_deployment':True,'assets_checked':sum(1 for _ in assets()),'targeted_tests':16,'tasks_permission_patch':True}))
 
 
 if __name__ == '__main__':

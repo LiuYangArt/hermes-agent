@@ -1565,9 +1565,14 @@ class TestAdapterBehavior(unittest.TestCase):
             msg_type="file",
             raw_content='{"file_key":"file_1","file_name":"report.pdf"}',
         )
+        image = adapter._extract_text_from_raw_content(
+            msg_type="image",
+            raw_content='{"image_key":"img_1"}',
+        )
 
         self.assertEqual(shared, "Shared chat: Platform Ops\nChat ID: oc_shared")
-        self.assertEqual(attachment, "[Attachment: report.pdf]")
+        self.assertEqual(attachment, "[Attachment: report.pdf] (attachment content was not read)")
+        self.assertEqual(image, "[Referenced image; image content was not read]")
 
     @patch.dict(os.environ, {}, clear=True)
     def test_extract_text_message_starting_with_slash_becomes_command(self):
@@ -4868,8 +4873,10 @@ class TestFeishuFetchMessageText(unittest.TestCase):
         adapter._bot_user_id = ""
         adapter._bot_name = "Hermes"
         adapter._message_text_cache = OrderedDict()
+        adapter._message_author_cache = OrderedDict()
         adapter._client = Mock()
         adapter._build_get_message_request = Mock(return_value=object())
+        adapter._resolve_sender_name_from_api = AsyncMock(return_value=None)
         return adapter
 
     def test_fetch_message_text_renders_mentions_without_hint_prefix(self):
@@ -4895,6 +4902,38 @@ class TestFeishuFetchMessageText(unittest.TestCase):
         self.assertEqual(result, "@Alice hi")
         # No [Mentioned:] wrapper — reply-context path intentionally skips the hint.
         self.assertNotIn("[Mentioned:", result)
+
+    def test_fetch_message_text_returns_none_when_lookup_has_no_items(self):
+        adapter = self._build_adapter()
+        response = Mock()
+        response.success = Mock(return_value=True)
+        response.data = SimpleNamespace(items=[])
+        adapter._client.im.v1.message.get = Mock(return_value=response)
+
+        result = asyncio.run(adapter._fetch_message_text("m_missing"))
+
+        self.assertIsNone(result)
+        self.assertNotIn("m_missing", adapter._message_text_cache)
+
+    def test_fetch_message_text_caches_author_metadata(self):
+        adapter = self._build_adapter()
+        adapter._resolve_sender_name_from_api = AsyncMock(return_value="Alice")
+        parent = SimpleNamespace(
+            body=SimpleNamespace(content='{"text":"quoted"}'),
+            msg_type="text",
+            mentions=[],
+            sender=SimpleNamespace(id="ou_alice", sender_type="user", name=""),
+        )
+        response = Mock()
+        response.success = Mock(return_value=True)
+        response.data = SimpleNamespace(items=[parent])
+        adapter._client.im.v1.message.get = Mock(return_value=response)
+
+        result = asyncio.run(adapter._fetch_message_text("m_parent"))
+
+        self.assertEqual(result, "quoted")
+        self.assertEqual(adapter._message_author_cache["m_parent"], ("ou_alice", "Alice"))
+        adapter._resolve_sender_name_from_api.assert_awaited_once_with("ou_alice", is_bot=False)
 
     def test_extract_text_from_raw_content_accepts_mentions_kwarg(self):
         from plugins.platforms.feishu.adapter import FeishuAdapter

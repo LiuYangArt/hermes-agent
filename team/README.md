@@ -35,7 +35,7 @@ docker compose -f team/compose.yaml build --build-arg HERMES_GIT_SHA="$(git rev-
 python3 team/manage.py verify
 ```
 
-`verify` 不发送消息、不调用收费生图接口，检查容器实际源码、运行资产与本仓库的一致性，并运行已有 9 项针对性测试。
+`verify` 不发送消息、不调用收费生图接口，检查容器实际源码、运行资产与本仓库的一致性，并运行16 项针对性测试。
 
 ```sh
 python3 team/manage.py install-assets
@@ -51,3 +51,23 @@ python3 team/manage.py verify
 
 原先以本机预构建 Core 镜像为底座，通过部署目录 Dockerfile COPY 整份 adapter，再重建容器。插件、技能和 Tasks 脚本分散在 data 和 task-bridge 中。它能运行，但完整文件覆盖不利于发现上游冲突。
 现在先改此仓库源码、审查 Git 差异、验证，再构建并部署。Docker 内部 `/opt/hermes` 是构建产物，不应作为长期编辑入口。
+
+## Lark 话题参与规则
+
+群里 @Hermes 开始话题；同一成员可免 @ 继续。@其他人（不含 Hermes）或发送 `/listen` 后，该成员进入旁听；再次 @Hermes 恢复。新成员默认旁听，需要首次 @Hermes。不同成员的参与状态互不影响。
+
+话题映射、成员状态和待使用的旁听材料保存在运行目录的 `feishu_threads.sqlite`。旁听不启动模型或工具，恢复时仅带入本话题材料；新群消息和未接管话题不保存。普通引用不直接当作话题回复，引用文字最多携带 12,000 字符，超限和读取失败明确提示。
+
+共享话题按成员身份有序处理；暂停会丢弃尚未开始的普通免 @ 请求，已明确 @ 的请求保留。已执行中的任务不因对象切换自动取消；停止、审批和澄清回答限当前发起者。共享话题审批只允许本次批准，不提供会话或永久批准。
+
+群聊中的 Lark CLI 明确使用机器人身份，拒绝个人授权、切换应用和修改共享登录。Tasks/ACP 保持自己的权限策略。公共知识允许进入上下文，禁止自动把话题讨论写成公共记忆；群平台不开放历史会话搜索。
+
+开发回归：
+
+```sh
+uv run --with pytest --with pytest-asyncio --with aiohttp --with lark-oapi python -m pytest -q tests/gateway/test_feishu_thread_state.py tests/gateway/test_reply_to_injection.py tests/gateway/test_feishu.py
+uv run --with aiohttp --with lark-oapi python team/tests/test_thread_conversations.py
+uv run python team/tests/test_lark_identity.py
+```
+
+测试和部署日志放在 `team/.local/`。真实消息收发权限及事件推送必须另外通过 Lark 验收，模拟处理器测试不能代替真实端到端结果。

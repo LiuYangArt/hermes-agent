@@ -36,6 +36,16 @@ def _source() -> SessionSource:
     )
 
 
+def _feishu_source() -> SessionSource:
+    return SessionSource(
+        platform=Platform.FEISHU,
+        chat_id="oc_group",
+        chat_name="Team",
+        chat_type="group",
+        user_name="Alice",
+    )
+
+
 @pytest.mark.asyncio
 async def test_reply_prefix_injected_when_text_absent_from_history():
     runner = _make_runner()
@@ -98,4 +108,66 @@ async def test_reply_prefix_still_injected_when_text_in_history():
     assert result.startswith(f'[Replying to: "{quoted}"]')
     assert result.endswith("What's the best time to go?")
 
+
+@pytest.mark.asyncio
+async def test_feishu_reply_includes_source_author_and_more_than_500_chars():
+    runner = _make_runner()
+    source = _feishu_source()
+    quoted = "甲" * 700
+    event = MessageEvent(
+        text="请分析",
+        source=source,
+        reply_to_message_id="om_source_1",
+        reply_to_text=quoted,
+        reply_to_author_id="ou_bob",
+        reply_to_author_name="Bob",
+    )
+
+    result = await runner._prepare_inbound_message_text(event=event, source=source, history=[])
+
+    assert result is not None
+    assert "Source message ID: om_source_1" in result
+    assert "Author: Bob" in result
+    assert quoted in result
+    assert "truncated" not in result
+
+
+@pytest.mark.asyncio
+async def test_feishu_reply_explicitly_marks_truncation():
+    runner = _make_runner()
+    source = _feishu_source()
+    quoted = "a" * 12_125
+    event = MessageEvent(
+        text="summarize",
+        source=source,
+        reply_to_message_id="om_long",
+        reply_to_text=quoted,
+        reply_to_author_name="Bob",
+    )
+
+    result = await runner._prepare_inbound_message_text(event=event, source=source, history=[])
+
+    assert result is not None
+    assert "a" * 12_000 in result
+    assert "[Quoted message truncated: 125 characters omitted.]" in result
+    assert "Source message ID: om_long" in result
+
+
+@pytest.mark.asyncio
+async def test_feishu_reply_reports_lookup_failure_without_inventing_content():
+    runner = _make_runner()
+    source = _feishu_source()
+    event = MessageEvent(
+        text="what do you think?",
+        source=source,
+        reply_to_message_id="om_withdrawn",
+        reply_to_text=None,
+    )
+
+    result = await runner._prepare_inbound_message_text(event=event, source=source, history=[])
+
+    assert result is not None
+    assert "Source message ID: om_withdrawn" in result
+    assert "Content unavailable: the referenced message could not be read." in result
+    assert result.endswith("what do you think?")
 
