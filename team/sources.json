@@ -4,6 +4,13 @@
     "commit": "d0575cb0148b78bbb903781299345f5c0e97ad64"
   },
   "official": "https://github.com/NousResearch/hermes-agent",
+  "seccomp": {
+    "repo": "https://github.com/moby/profiles",
+    "commit": "61eaf32614c7c71b60bd8927d3e6a4ffc8ff1f31",
+    "path": "seccomp/default.json",
+    "license": "Apache-2.0; see seccomp-LICENSE",
+    "changes": "Allow clone, unshare, mount, umount2, pivot_root and setns for unprivileged bubblewrap namespaces."
+  },
   "lark_cli": {
     "repo": "https://github.com/larksuite/cli",
     "commit": "1bd78144e890c685726bd251ef8ee7710750e538",

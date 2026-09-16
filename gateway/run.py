@@ -19648,6 +19648,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         if not canonical_cmd:
             return None
+        from team.governance import enabled as team_enabled, slash_denial
+        team_denied = slash_denial(source, canonical_cmd)
+        if team_denied is not None:
+            return team_denied
+        if team_enabled() and source.platform.value == "feishu":
+            return None
         policy = _policy_for_source(self.config, source)
         if not policy.enabled or policy.can_run(source.user_id, canonical_cmd):
             return None

@@ -1,12 +1,15 @@
 import json
 import subprocess
+import posixpath
+from urllib.parse import unquote, urlsplit
 
 
 def _shared_group_command(command):
     from gateway.session_context import get_session_env
+    from team.governance import enabled as team_enabled
 
     if (get_session_env("HERMES_SESSION_PLATFORM") != "feishu"
-            or get_session_env("HERMES_SESSION_CHAT_TYPE") not in {"group", "thread", "channel"}):
+            or (not team_enabled() and get_session_env("HERMES_SESSION_CHAT_TYPE") not in {"group", "thread", "channel"})):
         return command
     resource = command[1]
     if resource in {"auth", "config", "profile", "update", "event"} or resource.startswith("-"):
@@ -28,11 +31,11 @@ def _shared_group_command(command):
 def register(ctx):
     schema = {
         "name": "lark_cli",
-        "description": "All installed Lark CLI commands. Read /opt/data/skills/lark-shared/SKILL.md and the relevant official lark skill first. Use literal command words and arguments. Brand is international Lark. No extra plugin confirmation.",
+        "description": "Lark CLI business commands using the team's bot identity. Read /opt/data/skills/lark-shared/SKILL.md and the relevant skill first. For read-only project glossary lookup use resource=project_terms, omit action, and pass one term in arguments. Shared configuration changes require administrator authority. Use literal command words and arguments.",
         "parameters": {
             "type": "object",
             "properties": {
-                "resource": {"type": "string", "description": "First CLI word: workitem, attachment, wbs, resource, config, auth, inspect, version, --help, etc."},
+                "resource": {"type": "string", "description": "First CLI word, e.g. docs, drive, im, task, schema, api; or project_terms for scoped read-only glossary lookup."},
                 "action": {"type": "string", "description": "Optional second CLI word. Omit for top-level commands."},
                 "arguments": {"type": "array", "items": {"type": "string"}, "description": "Remaining literal argv strings; JSON payload is one string. Use --help or inspect to discover commands."},
             },
@@ -49,6 +52,13 @@ def register(ctx):
             return json.dumps({"success": False, "error": "Invalid command words"})
         if not isinstance(arguments, list) or not all(isinstance(item, str) for item in arguments):
             return json.dumps({"success": False, "error": "arguments must be strings"})
+        if resource == "project_terms":
+            if action or len(arguments) != 1:
+                return json.dumps({"success": False, "error": "project_terms requires exactly one term in arguments and no action"})
+            from team.lingo import query
+            return json.dumps(query(arguments[0]), ensure_ascii=False)
+        if resource == "api" and (action not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"} or not arguments):
+            return json.dumps({"success": False, "error": "api requires an explicit HTTP action and path as arguments[0]"})
         command = ["/usr/local/bin/lark-cli", resource]
         if action:
             command.append(action)
@@ -56,11 +66,30 @@ def register(ctx):
         if any("\x00" in item for item in command):
             return json.dumps({"success": False, "error": "NUL argument rejected"})
         try:
+            from team.governance import cli_denial, enabled as team_enabled
+            if team_enabled() and resource == "api" and arguments:
+                path = arguments[0]
+                for _ in range(3):
+                    path = unquote(path)
+                path = posixpath.normpath(urlsplit(path).path)
+                if not arguments[0].startswith("/open-apis/") or path != arguments[0] or "%" in arguments[0] or "//" in arguments[0]:
+                    raise ValueError("API 路径必须是未编码、无跳转和查询串的 /open-apis/... 路径。查询字段使用 --params。")
+                if path.startswith("/open-apis/lingo/"):
+                    raise ValueError("团队词典只允许通过 resource=project_terms 按配置词库查询；本阶段不开放词条写入。")
+                if path.startswith("/open-apis/application/"):
+                    from team.governance import shared_write_denial
+                    denied = shared_write_denial("application", path)
+                    if denied:
+                        raise ValueError(denied)
+            denied = cli_denial(resource, command[2:])
+            if denied:
+                raise ValueError(denied)
             command = _shared_group_command(command)
         except ValueError as exc:
             return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)
         try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL, cwd="/workspace")
+            from team.governance import run_command
+            result = run_command(command, capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL, cwd="/workspace")
         except subprocess.TimeoutExpired:
             return json.dumps({"success": False, "error": "Timeout; verify remote state before retrying writes. Use device-code init/poll --once for login."})
         response = {"success": result.returncode == 0, "exit_code": result.returncode, "output": result.stdout[-40000:]}

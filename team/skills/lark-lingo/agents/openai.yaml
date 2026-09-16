@@ -1,4 +1,4 @@
 interface:
   display_name: "Lark Lingo"
-  short_description: "Operate Lark glossary entries and batch draft imports"
-  default_prompt: "Use $lark-lingo to inspect classifications or batch-create Lingo drafts from structured glossary data."
+  short_description: "查询授权项目词库中的术语、别名和来源"
+  default_prompt: "使用 lark-lingo 的 project_terms 入口只读查询项目术语，明确区分未找到和接口失败。"

@@ -546,6 +546,10 @@ def _run_agent_tool_execution_middleware(
         block_message = scope_block
         block_error_type = "tool_scope_block"
         if block_message is None:
+            from team.governance import tool_denial
+            block_message = tool_denial(function_name, final_args)
+            block_error_type = "team_access"
+        if block_message is None:
             block_error_type = "plugin_block"
 
             def _resolve_pre_tool_block():

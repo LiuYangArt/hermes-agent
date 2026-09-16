@@ -2270,6 +2270,11 @@ class LocalEnvironment(BaseEnvironment):
         ``HERMES_HOME`` instead — single-word path, guaranteed to exist, same
         string resolves in both PowerShell and native Python.
         """
+        from team.governance import enabled as team_enabled
+        if team_enabled():
+            if not getattr(self, "_team_temp", None):
+                self._team_temp = tempfile.mkdtemp(prefix="hermes-team-shell-")
+            return self._team_temp
         if _IS_WINDOWS:
             # Derive a Windows-safe temp dir under HERMES_HOME.  Using
             # forward slashes makes the same string work unchanged in
@@ -2892,6 +2897,11 @@ class LocalEnvironment(BaseEnvironment):
         safe_cmd = _prepare_bash_cmd(cmd_string)
         args = [bash, "-l", "-c", safe_cmd] if login else [bash, "-c", safe_cmd]
         run_env = _make_run_env(self.env)
+        from team.governance import confined, command as team_command
+        if confined():
+            temporary = self.get_temp_dir()
+            run_env["TMPDIR"] = temporary
+            args = team_command(args, temporary=temporary)
 
         # Recover when the cwd has been deleted out from under us — usually by
         # a previous tool call that ran ``rm -rf`` on its own working dir
@@ -3118,6 +3128,8 @@ class LocalEnvironment(BaseEnvironment):
 
     def cleanup(self):
         """Clean up temp files and tear down the persistent session if any."""
+        if getattr(self, "_team_temp", None):
+            shutil.rmtree(self._team_temp, ignore_errors=True)
         session = getattr(self, "_pwsh_session", None)
         if session is not None:
             try:

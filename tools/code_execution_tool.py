@@ -1301,6 +1301,10 @@ def execute_code(
     Returns:
         JSON string with execution results.
     """
+    from team.governance import tool_denial
+    denied = tool_denial("execute_code", {})
+    if denied:
+        return tool_error(denied)
     if not SANDBOX_AVAILABLE:
         return tool_error(
             "execute_code sandbox is unavailable in this environment. "

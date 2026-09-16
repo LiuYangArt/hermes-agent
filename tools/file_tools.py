@@ -953,6 +953,11 @@ def _check_protected_instruction_write(paths: list[str],
     files) — partial application of an approved-in-part patch would be
     more surprising than an atomic all-or-nothing outcome.
     """
+    from team.governance import file_write_denial
+    for path in paths:
+        denied = file_write_denial(path, task_id)
+        if denied:
+            return denied
     enabled, extra = _protected_instruction_config()
     if not enabled:
         return None
@@ -1434,6 +1439,14 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
     raw_task_id = task_id or "default"
     task_id = _resolve_container_task_id(raw_task_id)
 
+    from team.governance import confined
+    if confined():
+        from tools.environments.local import LocalEnvironment
+        with _env_lock:
+            existing = _active_environments.get(task_id)
+        if _get_env_config()["env_type"] != "local" or (existing is not None and not isinstance(existing, LocalEnvironment)):
+            raise PermissionError("团队文件操作要求已隔离的本地执行环境。")
+
     # Fast path: check cache -- but also verify the underlying environment
     # is still alive (it may have been killed by the cleanup thread).
     with _file_ops_lock:
@@ -1622,6 +1635,10 @@ def _special_file_kind(path) -> str | None:
 def read_file_tool(path: str, offset: int = 1, limit: int = 2000, task_id: str = "default") -> str:
     """Read a file with pagination and line numbers."""
     try:
+        from team.governance import file_read_denial
+        denied = file_read_denial(path, task_id)
+        if denied:
+            return tool_error(denied)
         offset, limit = normalize_read_pagination(offset, limit)
 
         # ── Device path guard ─────────────────────────────────────────
@@ -2482,6 +2499,10 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
                 task_id: str = "default") -> str:
     """Search for content or files."""
     try:
+        from team.governance import file_read_denial
+        denied = file_read_denial(path, task_id)
+        if denied:
+            return tool_error(denied)
         offset, limit = normalize_search_pagination(offset, limit)
 
         # Track searches to detect *consecutive* repeated search loops.

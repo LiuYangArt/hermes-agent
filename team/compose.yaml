@@ -13,12 +13,15 @@ services:
       HERMES_UID: "501"
       HERMES_GID: "20"
       HERMES_GATEWAY_BOOTSTRAP_STATE: "running"
+      HERMES_WRITE_SAFE_ROOT: "/opt/data:/workspace/artifacts"
     volumes:
       - ${HERMES_TEAM_STATE_DIR:-${HOME}/.local/share/hermes-team}/data:/opt/data
       - ${HERMES_TEAM_WORKSPACE:-${HOME}/HermesTeamWorkspace}:/workspace
     pids_limit: 256
     mem_limit: 4g
     cpus: 2
+    security_opt:
+      - seccomp=./seccomp-bwrap.json
     tmpfs:
       - /tmp:size=512m,mode=1777
     command: ["sleep", "infinity"]

@@ -2151,6 +2151,11 @@ def handle_function_call(
         if function_name in _AGENT_LOOP_TOOLS:
             return tool_error(f"{function_name} must be handled by the agent loop")
 
+        from team.governance import tool_denial
+        team_denial = tool_denial(function_name, function_args)
+        if team_denial:
+            return tool_error(team_denial)
+
         # Check plugin hooks for a block/approve directive (unless caller
         # already checked — e.g. run_agent._invoke_tool passes skip=True to
         # avoid double-firing the hook).

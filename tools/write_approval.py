@@ -271,6 +271,10 @@ def evaluate_gate(subsystem: str, *, inline_summary: str = "",
     delays a write for approval, never silently refuses it. ``blocked`` is
     still produced when the user *actively denies* an inline prompt.
     """
+    from team.governance import shared_write_denial
+    denied = shared_write_denial("write_approval", subsystem)
+    if denied:
+        return GateDecision(blocked=True, message=denied)
     if not write_approval_enabled(subsystem):
         return GateDecision(allow=True)
 

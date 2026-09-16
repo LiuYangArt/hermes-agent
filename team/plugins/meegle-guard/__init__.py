@@ -32,8 +32,12 @@ def register(ctx):
         command.extend(arguments)
         if any("\x00" in item for item in command):
             return json.dumps({"success": False, "error": "NUL argument rejected"})
+        from team.governance import cli_denial, run_command
+        denied = cli_denial(resource, command[2:])
+        if denied:
+            return json.dumps({"success": False, "error": denied}, ensure_ascii=False)
         try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL, cwd="/workspace")
+            result = run_command(command, capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL, cwd="/workspace")
         except subprocess.TimeoutExpired:
             return json.dumps({"success": False, "error": "Timeout; verify remote state before retrying writes. Use device-code init/poll --once for login."})
         response = {"success": result.returncode == 0, "exit_code": result.returncode, "output": result.stdout[-40000:]}

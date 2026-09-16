@@ -35,7 +35,7 @@ docker compose -f team/compose.yaml build --build-arg HERMES_GIT_SHA="$(git rev-
 python3 team/manage.py verify
 ```
 
-`verify` 不发送消息、不调用收费生图接口，检查容器实际源码、运行资产与本仓库的一致性，并运行17 项针对性测试。
+`verify` 不发送消息、不调用收费生图接口，检查容器实际源码、运行资产与本仓库的一致性，并报告实际运行的针对性测试数量。
 
 ```sh
 python3 team/manage.py install-assets
@@ -71,3 +71,32 @@ uv run python team/tests/test_lark_identity.py
 ```
 
 测试和部署日志放在 `team/.local/`。真实消息收发权限及事件推送必须另外通过 Lark 验收，模拟处理器测试不能代替真实端到端结果。
+
+## 管理员与项目词典
+
+团队治理通过 `team_governance.enabled: true` 启用。管理员名单只使用 `platforms.feishu.extra.admins`，不并存第二套 `allow_admin_from` 名单。名单中的 ID 是当前 Lark 应用范围内的 `open_id`，不是姓名、邮箱或其他应用的 ID。成员在机器人会话发送 `/whoami` 获取自己的发送者 ID，由部署者核对当前应用后配置。
+
+运行配置示例（只使用占位值）：
+
+```yaml
+platforms:
+  feishu:
+    extra:
+      admins: [ou_YOUR_ADMIN]
+team_governance:
+  enabled: true
+  app_id: cli_YOUR_APP
+  lingo:
+    repo_ids: ['YOUR_REPO_ID']
+    allowed_chat_ids: [oc_YOUR_TEAM_CHAT]
+```
+
+部署者可运行 `.venv/bin/python team/configure_governance.py --admin ou_YOUR_ADMIN --lingo-repo YOUR_REPO_ID --lingo-chat oc_YOUR_TEAM_CHAT`。重复选项可配置多人、多词库和多群；每次执行替换完整名单，省略选项表示清空。脚本从运行容器核对应用 ID，保留其他配置，并为该平台固定开启相关工具。接着按上述流程安装资产、加载新镜像、运行 `verify`。配置在进程启动时缓存，修改后必须重启。
+
+所有成员使用同一工具列表。每次实际操作按真实消息请求者检查权限，管理员可以维护共享技能、记忆、画像、插件和配置；普通成员可使用已有业务能力，只能在 `/workspace/artifacts` 写入普通产物。文件和受控 CLI 使用 bubblewrap，只读根目录并隐藏运行数据，按调用需要开放公共文件及精确凭据路径。普通成员不能调用任意终端代码；管理员可以。Linux 用户命名空间所需系统调用由 `seccomp-bwrap.json` 明确开放，来源见 `sources.json`，不使用特权容器。
+
+管理员为空、应用不匹配、身份缺失或后台自动学习均不会获得共享写权限；“批准写入”也不能替代管理员身份。Tasks/ACP 不继承 Lark 管理员权限，现有专用业务操作仍受其原有策略约束。审计记录在网关日志中以 `team_access` 标识，含请求者、对象与允许/拒绝结果，分享前脱敏。
+
+项目词典经 `lark_cli` 的 `project_terms` 查询，`arguments` 只传一个术语，不填写 `action`。查询固定使用机器人身份，并限制为部署者配置的词库及可查看群；不使用成员个人授权。匹配名称和别名后读取实际词条，多义词返回候选，未找到与接口错误分别报告；没有来源的词条明确标注，不生成虚构链接。此入口只读，不开放词条维护。
+
+上线验收必须另外覆盖：同群管理员写入并回读/清理专用测试资产、普通成员拒绝且资产未变、同话题换人、实际群中术语查询。临时目录中的测试和直接 CLI 查询只证明相应层，不代表群入口验收通过。测试消息与测试资产写入须在已获授权的范围内进行。

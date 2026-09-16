@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import patch
 
@@ -110,6 +111,7 @@ class ThreadConversationTests(unittest.IsolatedAsyncioTestCase):
         text,
         *,
         user="ou_alice",
+        tenant_user="",
         root=None,
         thread=None,
         mentions=(),
@@ -142,7 +144,7 @@ class ThreadConversationTests(unittest.IsolatedAsyncioTestCase):
         )
         sender = NS(
             sender_type="user",
-            sender_id=NS(open_id=user, user_id="", union_id=""),
+            sender_id=NS(open_id=user, user_id=tenant_user, union_id=""),
         )
         await adapter._handle_message_event_data(NS(event=NS(message=message, sender=sender)))
 
@@ -196,6 +198,33 @@ class ThreadConversationTests(unittest.IsolatedAsyncioTestCase):
         await self._wait_idle()
         self.assertEqual(self.handled[-1].source.thread_id, "original")
         self.assertEqual(len(self.handled), 3)
+
+    async def test_team_admin_identity_survives_real_inbound_mapping(self):
+        from team import governance
+        from gateway.run import GatewayRunner
+        from gateway.session_context import clear_session_vars
+
+        Path(self.home.name, "config.yaml").write_text(
+            "team_governance:\n  enabled: true\n  app_id: cli_test_app\n"
+            "platforms:\n  feishu:\n    extra:\n      admins: [ou_alice]\n",
+            encoding="utf-8",
+        )
+        governance._load.cache_clear()
+        self.addCleanup(governance._load.cache_clear)
+        self.adapter._resolve_sender_profile = feishu.FeishuAdapter._resolve_sender_profile.__get__(self.adapter)
+        self.adapter._resolve_sender_name_from_api = self._async_value("Alice")
+        await self._inbound("om_governance", "test", tenant_user="tenant_alice", mentions=("hermes",))
+        await self._wait_idle()
+        event = self.handled[-1]
+        self.assertEqual(event.source.user_id, "ou_alice")
+        self.assertEqual(event.source.message_id, "om_governance")
+        self.assertTrue(governance.is_admin(event.source))
+        runner = object.__new__(GatewayRunner)
+        tokens = runner._set_session_env(NS(source=event.source, session_key="test-session"))
+        try:
+            self.assertTrue(governance.is_admin())
+        finally:
+            clear_session_vars(tokens)
 
     async def test_participation_background_and_topic_isolation(self):
         await self._start_topic()

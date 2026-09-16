@@ -2871,6 +2871,10 @@ def terminal_tool(
         # With max_lines limit
         >>> result = terminal_tool(command="dmesg", max_lines=100)
     """
+    from team.governance import tool_denial
+    denied = tool_denial("terminal", {})
+    if denied:
+        return tool_error(denied)
     try:
         # Interactive mode may omit `command` — default to a persistent shell.
         if command is None and interactive:

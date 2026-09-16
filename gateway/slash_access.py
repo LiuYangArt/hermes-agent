@@ -204,6 +204,9 @@ def policy_for_source(gateway_config: Any, source: Any) -> SlashAccessPolicy:
     Callers should treat the returned policy as authoritative for slash
     command gating only. It does not gate plain chat messages.
     """
+    from team.governance import enabled as team_enabled, admin_ids, MEMBER_COMMANDS
+    if source is not None and getattr(source.platform, "value", source.platform) == "feishu" and team_enabled():
+        return SlashAccessPolicy(True, admin_ids(), MEMBER_COMMANDS)
     if gateway_config is None or source is None:
         return SlashAccessPolicy(
             enabled=False,

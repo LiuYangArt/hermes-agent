@@ -27,6 +27,9 @@ def handle(params, **kwargs):
         from gateway.platforms.base import validate_media_delivery_path
         images = []
         for ref in refs:
+            from team.governance import confined, public_path
+            if confined() and not public_path(ref):
+                raise ValueError('Reference must be a team public image')
             safe = validate_media_delivery_path(ref)
             if not safe or Path(safe).suffix.lower() not in ('.png','.jpg','.jpeg','.webp'):
                 raise ValueError('Reference must be an allowed local image')
@@ -41,7 +44,8 @@ def handle(params, **kwargs):
         command = ['/opt/hermes/.venv/bin/python', str(SCRIPT), '--prompt-file', str(prompt_file), '--out', str(out), '--mode', mode, '--model', model, '--quality', quality, '--size', size, '--background', background]
         for ref in images:
             command.extend(['--image', ref])
-        result = subprocess.run(command, capture_output=True, text=True, timeout=330, cwd='/opt/hermes')
+        from team.governance import run_command
+        result = run_command(command, outputs=(str(ROOT),), capture_output=True, text=True, timeout=330, cwd='/opt/hermes')
         report_path = out.with_suffix('.json')
         if report_path.exists():
             report = json.loads(report_path.read_text())

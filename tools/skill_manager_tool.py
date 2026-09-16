@@ -1556,6 +1556,10 @@ def skill_manage(
 
     Returns JSON string with results.
     """
+    from team.governance import shared_write_denial
+    denied = shared_write_denial("skill_manage:" + action, name)
+    if denied:
+        return tool_error(denied, success=False)
     preflight = _background_review_preflight(action, name)
     if preflight is not None:
         return orjson.dumps(preflight).decode('utf-8')

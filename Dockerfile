@@ -458,3 +458,8 @@ CMD [ ]
 
 # Team integrations use the same pinned CLI versions as the deployed service.
 RUN chmod 0711 /root && npm install -g @lark-project/meegle@1.0.23 @larksuite/cli@1.0.95
+
+# Team tools run inside an unprivileged mount namespace, including on macOS bind mounts.
+RUN apt-get -o Acquire::Retries=3 update && \
+    apt-get -o Acquire::Retries=3 install -y --no-install-recommends bubblewrap && \
+    rm -rf /var/lib/apt/lists/*

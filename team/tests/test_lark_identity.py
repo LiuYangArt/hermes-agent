@@ -1,6 +1,9 @@
 import importlib.util
+import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from gateway.session_context import clear_session_vars, set_session_vars
 import plugins.platforms.feishu.adapter as adapter
@@ -36,6 +39,19 @@ class IdentityTests(unittest.TestCase):
         self.tokens = set_session_vars(platform="acp", user_id="tasks-user")
         command = ["lark-cli", "task", "+get", "--as", "user"]
         self.assertEqual(bridge._shared_group_command(command), command)
+
+    def test_team_sender_uses_trusted_open_id_even_when_tenant_id_is_present(self):
+        instance = object.__new__(adapter.FeishuAdapter)
+        instance._resolve_sender_name_from_api = AsyncMock(return_value="Member")
+        sender = SimpleNamespace(open_id="ou_admin", user_id="tenant_user", union_id="on_union")
+        with patch("team.governance.enabled", return_value=True):
+            profile = asyncio.run(instance._resolve_sender_profile(sender))
+            self.assertEqual(profile["user_id"], "ou_admin")
+            self.assertEqual(profile["user_id_alt"], "on_union")
+            sender.open_id = None
+            self.assertIsNone(asyncio.run(instance._resolve_sender_profile(sender))["user_id"])
+        with patch("team.governance.enabled", return_value=False):
+            self.assertEqual(asyncio.run(instance._resolve_sender_profile(sender))["user_id"], "tenant_user")
 
 
 if __name__ == "__main__":

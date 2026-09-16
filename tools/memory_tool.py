@@ -379,6 +379,10 @@ class MemoryStore:
 
     def save_to_disk(self, target: str):
         """Persist entries to the appropriate file. Called after every mutation."""
+        from team.governance import shared_write_denial
+        denied = shared_write_denial("memory:save_to_disk", target)
+        if denied:
+            raise PermissionError(denied)
         get_memory_dir().mkdir(parents=True, exist_ok=True)
         path = self._path_for(target)
         # Diagnostic for GitHub #335: every mutation persists here synchronously
@@ -412,6 +416,10 @@ class MemoryStore:
 
     def add(self, target: str, content: str) -> Dict[str, Any]:
         """Append a new entry. Returns error if it would exceed the char limit."""
+        from team.governance import shared_write_denial
+        denied = shared_write_denial("memory:add", target)
+        if denied:
+            return {"success": False, "error": denied}
         content = content.strip()
         if not content:
             return {"success": False, "error": "Content cannot be empty."}
@@ -471,6 +479,10 @@ class MemoryStore:
 
     def replace(self, target: str, old_text: str, new_content: str) -> Dict[str, Any]:
         """Find entry containing old_text substring, replace it with new_content."""
+        from team.governance import shared_write_denial
+        denied = shared_write_denial("memory:replace", target)
+        if denied:
+            return {"success": False, "error": denied}
         old_text = old_text.strip()
         new_content = new_content.strip()
         if not old_text:
@@ -542,6 +554,10 @@ class MemoryStore:
 
     def remove(self, target: str, old_text: str) -> Dict[str, Any]:
         """Remove the entry containing old_text substring."""
+        from team.governance import shared_write_denial
+        denied = shared_write_denial("memory:remove", target)
+        if denied:
+            return {"success": False, "error": denied}
         old_text = old_text.strip()
         if not old_text:
             return {"success": False, "error": "old_text cannot be empty."}
@@ -595,6 +611,10 @@ class MemoryStore:
         the net result would exceed the char limit, NOTHING is written and an
         error is returned describing the first failure plus the live state.
         """
+        from team.governance import shared_write_denial
+        denied = shared_write_denial("memory:apply_batch", target)
+        if denied:
+            return {"success": False, "error": denied}
         if not operations:
             return {"success": False, "error": "operations list is empty."}
 
