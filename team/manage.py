@@ -77,6 +77,34 @@ def verify():
             mismatches.append(core)
     if mismatches:
         raise SystemExit('Source/deployment differences:\n'+'\n'.join(mismatches))
+    auth_check = '''
+from pathlib import Path
+import yaml
+from gateway.pairing import PairingStore
+from gateway.run import GatewayRunner
+from gateway.session import Platform, SessionSource
+
+config = yaml.safe_load(Path('/opt/data/config.yaml').read_text()) or {}
+if (config.get('team_governance') or {}).get('enabled'):
+    admins = (((config.get('platforms') or {}).get('feishu') or {}).get('extra') or {}).get('admins') or []
+    runner = object.__new__(GatewayRunner)
+    runner.pairing_store = PairingStore()
+    runner.pairing_stores = {}
+    runner.adapters = {}
+    if any(
+        not isinstance(admin, str) or not admin.startswith('ou_')
+        or not runner._is_user_authorized(SessionSource(
+            platform=Platform.FEISHU, chat_id='team-auth-preflight', chat_type='group', user_id=admin))
+        for admin in admins
+    ):
+        raise SystemExit('Team administrator is not authorized at the Feishu chat gateway')
+'''
+    try:
+        run(['docker', 'exec', '--user', 'hermes', '-e', 'HOME=/opt/data', '-e',
+             'HERMES_HOME=/opt/data', '-w', '/workspace', CONTAINER,
+             '/opt/hermes/.venv/bin/python', '-c', auth_check], capture_output=True)
+    except subprocess.CalledProcessError:
+        raise SystemExit('Admin configuration differs from chat authorization: verify each open_id has an existing Feishu gateway approval. No approval was changed.') from None
     temp_home = '/tmp/hermes-source-check-'+uuid.uuid4().hex
     test_count = 0
     try:

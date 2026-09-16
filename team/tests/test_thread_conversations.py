@@ -201,8 +201,10 @@ class ThreadConversationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_team_admin_identity_survives_real_inbound_mapping(self):
         from team import governance
+        from gateway.pairing import PairingStore
         from gateway.run import GatewayRunner
         from gateway.session_context import clear_session_vars
+        from unittest.mock import patch
 
         Path(self.home.name, "config.yaml").write_text(
             "team_governance:\n  enabled: true\n  app_id: cli_test_app\n"
@@ -220,6 +222,17 @@ class ThreadConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.source.message_id, "om_governance")
         self.assertTrue(governance.is_admin(event.source))
         runner = object.__new__(GatewayRunner)
+        with patch("gateway.pairing.PAIRING_DIR", Path(self.home.name, "pairing")):
+            runner.pairing_store = PairingStore()
+        runner.pairing_stores = {}
+        runner.adapters = {}
+        self.assertFalse(runner._is_user_authorized(event.source))
+        runner.pairing_store._approve_user("feishu", "tenant_alice")
+        self.assertFalse(runner._is_user_authorized(event.source))
+        runner.pairing_store._approve_user("feishu", "ou_alice")
+        self.assertTrue(runner._is_user_authorized(event.source))
+        from dataclasses import replace
+        self.assertFalse(runner._is_user_authorized(replace(event.source, user_id="ou_stranger")))
         tokens = runner._set_session_env(NS(source=event.source, session_key="test-session"))
         try:
             self.assertTrue(governance.is_admin())
