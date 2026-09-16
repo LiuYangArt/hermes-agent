@@ -21,7 +21,8 @@ class IdentityTests(unittest.TestCase):
     def test_group_uses_bot_and_rejects_personal_identity(self):
         command = ["lark-cli", "im", "+chat-list"]
         self.assertEqual(bridge._shared_group_command(command)[-2:], ["--as", "bot"])
-        for flags in (["--as", "user"], ["--as=user"], ["--profile", "alice"], ["--profile=alice"]):
+        self.assertEqual(bridge._shared_group_command(command + ["--text", "--as=bot"])[-2:], ["--as", "bot"])
+        for flags in (["--as", "user"], ["--as=user"], ["--profile", "alice"], ["--profile=alice"], ["--"]):
             with self.assertRaises(ValueError):
                 bridge._shared_group_command(command + flags)
 

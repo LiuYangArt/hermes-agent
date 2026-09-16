@@ -12,13 +12,15 @@ def _shared_group_command(command):
     if resource in {"auth", "config", "profile", "update", "event"} or resource.startswith("-"):
         raise ValueError("群聊不能修改共享登录、应用配置或启动事件监听；请由管理员在部署端处理。")
     for index, word in enumerate(command[2:], 2):
+        if word == "--":
+            raise ValueError("群聊命令不能使用终止参数解析的标记。")
         if word == "--profile" or word.startswith("--profile="):
             raise ValueError("群聊不能切换应用或个人授权配置。")
         if word == "--as" and (index + 1 >= len(command) or command[index + 1] != "bot"):
             raise ValueError("团队群聊使用机器人身份，不能继承任何成员的个人授权。")
         if word.startswith("--as=") and word != "--as=bot":
             raise ValueError("团队群聊使用机器人身份，不能继承任何成员的个人授权。")
-    if resource not in {"schema", "skills", "help", "whoami"} and "--as" not in command and "--as=bot" not in command:
+    if resource not in {"schema", "skills", "help", "whoami"}:
         command = [*command, "--as", "bot"]
     return command
 
