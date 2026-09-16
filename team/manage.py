@@ -75,7 +75,7 @@ def verify():
             raise SystemExit('Tasks bridge approval protection is missing.')
     finally:
         run(['docker','exec',CONTAINER,'rm','-rf',temp_home])
-    print(json.dumps({'source_matches_deployment':True,'assets_checked':sum(1 for _ in assets()),'targeted_tests':16,'tasks_permission_patch':True}))
+    print(json.dumps({'source_matches_deployment':True,'assets_checked':sum(1 for _ in assets()),'targeted_tests':17,'tasks_permission_patch':True}))
 
 
 if __name__ == '__main__':

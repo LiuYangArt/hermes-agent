@@ -5263,7 +5263,7 @@ class FeishuAdapter(ThreadConversationMixin, BasePlatformAdapter):
                     if actual_thread:
                         existing = self._topic_state.resolve(chat_id, thread_id=actual_thread)
                         if existing is None or existing == topic:
-                            self._topic_state.bind(chat_id, topic, (actual_thread,))
+                            self._topic_state.bind(chat_id, topic, (actual_thread, getattr(delivery, "root_id", None)))
                         else:
                             logger.warning("[Feishu] Reply belongs to an already managed topic; preserving existing conversation mapping")
                 return response

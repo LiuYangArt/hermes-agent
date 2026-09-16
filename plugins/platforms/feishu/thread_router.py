@@ -24,9 +24,12 @@ class ThreadConversationMixin:
         chat = str(message.chat_id)
         root = getattr(message, "root_id", None)
         thread = getattr(message, "thread_id", None)
-        # Ordinary quoted replies need not be real topic replies.
-        topic = store.resolve(chat, root_id=root, thread_id=thread) if thread else None
         explicit = any(ref.is_self for ref in normalized.mentions)
+        # Lark anchors reply_in_thread to the quoted root. Outside that
+        # native thread, quoting it still requires an explicit invitation.
+        if not thread and not explicit:
+            return None
+        topic = store.resolve(chat, root_id=root, thread_id=thread)
         other = any(not ref.is_self for ref in normalized.mentions)
         user = str(getattr(sender_id, "open_id", None) or getattr(sender_id, "user_id", ""))
         text = normalized.text_content.strip()
@@ -35,7 +38,7 @@ class ThreadConversationMixin:
         if topic is None:
             if not explicit:
                 return None
-            topic = (root or thread) if thread else message.message_id
+            topic = root or thread or message.message_id
             store.activate(chat, topic, aliases=(thread,) if thread else ())
         elif thread:
             store.bind(chat, topic, (thread, root))

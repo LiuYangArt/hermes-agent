@@ -182,6 +182,21 @@ class ThreadConversationTests(unittest.IsolatedAsyncioTestCase):
         )
         await self._wait_idle(adapter)
 
+    async def test_group_quote_reuses_native_root_without_enabling_group_followups(self):
+        await self._inbound("quote_request", "read quote", root="original", mentions=("hermes",))
+        await self._wait_idle()
+        self.assertEqual(self.handled[-1].source.thread_id, "original")
+        await self._inbound("group_reply", "human discussion", root="original")
+        await self._wait_idle()
+        self.assertEqual(len(self.handled), 1)
+        await self._inbound("second_quote", "read again", root="original", mentions=("hermes",))
+        await self._wait_idle()
+        self.assertEqual(self.handled[-1].source.thread_id, "original")
+        await self._inbound("native_followup", "continue", root="original", thread="omt_quote")
+        await self._wait_idle()
+        self.assertEqual(self.handled[-1].source.thread_id, "original")
+        self.assertEqual(len(self.handled), 3)
+
     async def test_participation_background_and_topic_isolation(self):
         await self._start_topic()
         self.assertEqual([event.text for event in self.handled], ["start"])
