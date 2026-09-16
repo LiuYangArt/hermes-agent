@@ -1,3 +1,5 @@
+> **个人 Docker 部署 fork**：完整定制源码、构建与维护说明见 [team/README.md](team/README.md)。直接上游为 Hermes-CN-Core，官方源头为 NousResearch/hermes-agent；保留双方提交历史和许可证。
+
 # Hermes-CN-Core
 
 简体中文（兼容入口：[README.zh-CN.md](./README.zh-CN.md)） · [English](./README.en.md)

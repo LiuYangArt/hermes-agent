@@ -1,3 +1,7 @@
+# 此个人 fork 的部署维护约定
+
+本仓库是用户 Docker Hermes 的完整源代码归档与后续维护入口。维护当前 main，不创建分支。只推送 origin（用户自己的 fork），不推送上游或自动开 PR。Docker/团队定制按 team/AGENTS.md 与 team/README.md 验证；用户要求最小必要验证，不默认运行不相关 Desktop 全套或发布流水线。下方上游跨仓库/分支/PR流程用于向上游贡献，不能覆盖用户本次范围。
+
 # Hermes Agent - Development Guide
 
 Instructions for AI coding assistants and developers working on the hermes-agent codebase.

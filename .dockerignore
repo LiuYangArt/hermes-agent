@@ -103,3 +103,11 @@ plans/
 .gitattributes
 .hadolint.yaml
 .mailmap
+
+# Team source can be shipped; private deployment state must never enter a build.
+!team/skills/**
+!team/acp/task-rules.txt
+team/.local/
+team/**/runtime/
+team/**/node_modules/
+team/tests/

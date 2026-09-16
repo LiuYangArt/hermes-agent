@@ -3435,7 +3435,10 @@ class FeishuAdapter(BasePlatformAdapter):
             if hint:
                 text = f"{hint}\n\n{text}" if text else hint
 
-        thread_id = getattr(message, "thread_id", None) or getattr(message, "root_id", None) or None
+        # Keep the initiating message and later thread replies in one conversation.
+        thread_id = getattr(message, "root_id", None) or getattr(message, "thread_id", None) or None
+        if chat_type == "group" and not thread_id:
+            thread_id = message_id
         reply_to_message_id = (
             getattr(message, "parent_id", None)
             or getattr(message, "upper_message_id", None)
@@ -4941,6 +4944,9 @@ class FeishuAdapter(BasePlatformAdapter):
         effective_reply_to = reply_to
         if not effective_reply_to and metadata and metadata.get("thread_id"):
             effective_reply_to = metadata.get("reply_to_message_id")
+            # Root message IDs also anchor progress updates before a thread exists.
+            if not effective_reply_to and str(metadata["thread_id"]).startswith("om_"):
+                effective_reply_to = metadata["thread_id"]
         reply_in_thread = bool((metadata or {}).get("thread_id"))
         if effective_reply_to:
             body = self._build_reply_message_body(

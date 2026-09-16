@@ -455,3 +455,6 @@ VOLUME [ "/opt/data" ]
 # intercepted by /init's POSIX shell.
 ENTRYPOINT [ "/opt/hermes/docker/entrypoint-dispatch.sh" ]
 CMD [ ]
+
+# Team integrations use the same pinned CLI versions as the deployed service.
+RUN chmod 0711 /root && npm install -g @lark-project/meegle@1.0.23 @larksuite/cli@1.0.95

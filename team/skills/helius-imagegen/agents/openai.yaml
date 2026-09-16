@@ -1,0 +1,6 @@
+interface:
+  display_name: "Helius Imagegen"
+  short_description: "通过 Helius 默认使用 GPT Image 2.5，自动选择文生图或图生图"
+  default_prompt: "用 $helius-imagegen 生成图片，根据上下文选择文生图或图生图，遵守我指定的尺寸和风格。"
+policy:
+  allow_implicit_invocation: true

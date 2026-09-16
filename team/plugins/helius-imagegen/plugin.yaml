@@ -1,0 +1,3 @@
+name: helius-imagegen
+version: "1.0.0"
+description: Generate Helius images with bounded structured inputs, without shell execution

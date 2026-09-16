@@ -1,0 +1,24 @@
+name: hermes-team
+services:
+  hermes-team:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: hermes-team:local
+    container_name: hermes-team
+    restart: unless-stopped
+    env_file:
+      - ${HERMES_TEAM_STATE_DIR:-${HOME}/.local/share/hermes-team}/.env
+    environment:
+      HERMES_UID: "501"
+      HERMES_GID: "20"
+      HERMES_GATEWAY_BOOTSTRAP_STATE: "running"
+    volumes:
+      - ${HERMES_TEAM_STATE_DIR:-${HOME}/.local/share/hermes-team}/data:/opt/data
+      - ${HERMES_TEAM_WORKSPACE:-${HOME}/HermesTeamWorkspace}:/workspace
+    pids_limit: 256
+    mem_limit: 4g
+    cpus: 2
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    command: ["sleep", "infinity"]

@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/local/bin/docker exec -i -u 501:20 -e HOME=/opt/data -e HERMES_HOME=/opt/data -w /workspace hermes-team /opt/hermes/.venv/bin/python -m hermes_cli.main acp

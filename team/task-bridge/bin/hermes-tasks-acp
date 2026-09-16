@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/local/bin/docker exec -i -u 501:20 -e HOME=/opt/data -e HERMES_HOME=/opt/data -e LARKSUITE_CLI_CONFIG_DIR=/opt/data/task-lark-cli -e PYTHONPATH=/opt/hermes -w /workspace hermes-team /opt/hermes/.venv/bin/python /opt/data/task-bridge/acp_entry.py acp

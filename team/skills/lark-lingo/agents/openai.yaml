@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lark Lingo"
+  short_description: "Operate Lark glossary entries and batch draft imports"
+  default_prompt: "Use $lark-lingo to inspect classifications or batch-create Lingo drafts from structured glossary data."

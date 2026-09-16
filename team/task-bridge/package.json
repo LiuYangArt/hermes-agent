@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@iluolyx/aamp-feishu-bridge": "0.1.52-dev.5",
+    "@luckyterry/aamp-acp-bridge": "0.1.29-dev.0",
+    "acpx": "0.11.2"
+  },
+  "overrides": {
+    "nodemailer": "9.1.1"
+  }
+}
