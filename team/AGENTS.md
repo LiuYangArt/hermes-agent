@@ -11,3 +11,4 @@
 - 验证证据写在本地 `.local/` 或调用者交付目录，不发布真实群/任务 ID。
 - 团队治理要求 Linux 容器、local 执行后端、bubblewrap 和 compose 中的 seccomp 配置。不能关闭隔离来修复工具失败；普通产物写入 `/workspace/artifacts`。
 - 管理员唯一配置是 `platforms.feishu.extra.admins`，绑定 `team_governance.app_id` 的 open_id；配置修改后重启生效。项目词典在所有已有入口可用，只配置词库，不设置群名单，不以个人授权替代机器人授权。
+- Lark 进度覆盖专项回归：`.venv/bin/python team/tests/test_lark_reply_replacement.py`，使用临时运行目录；真实消息回读证据与日志保存在 `team/.local/progress-replacement/`，不提交真实群和消息 ID。

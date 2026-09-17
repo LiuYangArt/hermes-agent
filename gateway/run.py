@@ -4120,6 +4120,7 @@ class TurnRunner:
             if isinstance(adapter, BasePlatformAdapter)
             else len
         )
+        progress_metadata = dict(ctx._progress_metadata or {}, progress=True)
         try:
             _raw_progress_limit = int(getattr(adapter, "MAX_MESSAGE_LENGTH", 4000) or 4000)
         except Exception:
@@ -4145,7 +4146,7 @@ class TurnRunner:
         # Detect whether the adapter's edit_message accepts metadata so
         # overflow edits preserve Telegram topic/thread routing (#27487).
         _edit_accepts_metadata = False
-        if ctx._progress_metadata:
+        if progress_metadata:
             try:
                 _edit_params = inspect.signature(adapter.edit_message).parameters
                 _edit_accepts_metadata = (
@@ -4167,7 +4168,7 @@ class TurnRunner:
             if getattr(adapter, "REQUIRES_EDIT_FINALIZE", False):
                 kwargs["finalize"] = True
             if _edit_accepts_metadata:
-                kwargs["metadata"] = ctx._progress_metadata
+                kwargs["metadata"] = progress_metadata
             return await adapter.edit_message(**kwargs)
 
         def _progress_text(lines: list) -> str:
@@ -4201,7 +4202,7 @@ class TurnRunner:
                 chat_id=ctx.source.chat_id,
                 content=text,
                 reply_to=ctx._progress_reply_to,
-                metadata=ctx._progress_metadata,
+                metadata=progress_metadata,
             )
             _track_progress_result(result)
             return result
@@ -4356,7 +4357,7 @@ class TurnRunner:
                             chat_id=ctx.source.chat_id,
                             content=msg,
                             reply_to=ctx._progress_reply_to,
-                            metadata=ctx._progress_metadata,
+                            metadata=progress_metadata,
                         )
                         if (
                             ctx._cleanup_progress
@@ -4372,7 +4373,7 @@ class TurnRunner:
                             chat_id=ctx.source.chat_id,
                             content=full_text,
                             reply_to=ctx._progress_reply_to,
-                            metadata=ctx._progress_metadata,
+                            metadata=progress_metadata,
                         )
                     else:
                         # Editing unsupported: send just this line
@@ -4380,7 +4381,7 @@ class TurnRunner:
                             chat_id=ctx.source.chat_id,
                             content=msg,
                             reply_to=ctx._progress_reply_to,
-                            metadata=ctx._progress_metadata,
+                            metadata=progress_metadata,
                         )
                     if result.success and result.message_id:
                         progress_msg_id = result.message_id

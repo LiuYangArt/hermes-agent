@@ -6815,7 +6815,7 @@ class BasePlatformAdapter(ABC):
                         f"{error_detail}\n"
                         "Try again or use /reset to start a fresh session."
                     ),
-                    metadata=_thread_metadata,
+                    metadata=_mark_notify_metadata(_thread_metadata),
                 )
             except Exception as notify_err:
                 logger.error(

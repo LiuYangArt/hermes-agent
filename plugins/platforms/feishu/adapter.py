@@ -1543,9 +1543,10 @@ def check_feishu_requirements() -> bool:
 
 
 from .thread_router import ThreadConversationMixin
+from .reply_state import FeishuReplyMixin
 
 
-class FeishuAdapter(ThreadConversationMixin, BasePlatformAdapter):
+class FeishuAdapter(FeishuReplyMixin, ThreadConversationMixin, BasePlatformAdapter):
     """Feishu/Lark bot adapter."""
 
     supports_code_blocks = True  # Feishu renders fenced code blocks
@@ -2040,7 +2041,7 @@ class FeishuAdapter(ThreadConversationMixin, BasePlatformAdapter):
     # Outbound — send / edit / send_image / send_voice / …
     # =========================================================================
 
-    async def send(
+    async def _send_message(
         self,
         chat_id: str,
         content: str,
@@ -2060,7 +2061,7 @@ class FeishuAdapter(ThreadConversationMixin, BasePlatformAdapter):
         # client while other chunks render correctly. Lock the markdown
         # decision at the whole-message level so every chunk consistently
         # uses ``post``. See #26841.
-        prefer_post = bool(_MARKDOWN_HINT_RE.search(formatted))
+        prefer_post = bool(_MARKDOWN_HINT_RE.search(formatted)) or bool((metadata or {}).get("progress"))
         last_response = None
 
         try:
@@ -2107,13 +2108,14 @@ class FeishuAdapter(ThreadConversationMixin, BasePlatformAdapter):
             logger.error("[Feishu] Send error: %s", exc, exc_info=True)
             return SendResult(success=False, error=str(exc))
 
-    async def edit_message(
+    async def _edit_message(
         self,
         chat_id: str,
         message_id: str,
         content: str,
         *,
         finalize: bool = False,
+        prefer_post: bool = False,
     ) -> SendResult:
         """Edit a previously sent Feishu text/post message."""
         if not self._client:
@@ -2121,7 +2123,7 @@ class FeishuAdapter(ThreadConversationMixin, BasePlatformAdapter):
 
         content = self.format_message(content)
         try:
-            msg_type, payload = self._build_outbound_payload(content)
+            msg_type, payload = self._build_outbound_payload(content, prefer_post=prefer_post)
             body = self._build_update_message_body(msg_type=msg_type, content=payload)
             request = self._build_update_message_request(message_id=message_id, request_body=body)
             response = await self._run_blocking(self._client.im.v1.message.update, request)
@@ -2222,6 +2224,7 @@ class FeishuAdapter(ThreadConversationMixin, BasePlatformAdapter):
                     "chat_id": chat_id,
                     "requester": requester or "",
                 }
+                await self._show_approval_wait(chat_id)
             return result
         except Exception as exc:
             logger.warning("[Feishu] send_exec_approval failed: %s", exc)
@@ -3376,6 +3379,7 @@ class FeishuAdapter(ThreadConversationMixin, BasePlatformAdapter):
         return self._pending_processing_reactions.pop(message_id, None)
 
     async def on_processing_start(self, event: MessageEvent) -> None:
+        self._begin_reply(event)
         if not self._reactions_enabled():
             return
         message_id = event.message_id
@@ -3388,6 +3392,7 @@ class FeishuAdapter(ThreadConversationMixin, BasePlatformAdapter):
     async def on_processing_complete(
         self, event: MessageEvent, outcome: ProcessingOutcome
     ) -> None:
+        await self._finish_reply(event, outcome)
         route = (getattr(event, "metadata", None) or {}).get("feishu_thread")
         if route and outcome is ProcessingOutcome.SUCCESS:
             self._thread_store().consume(

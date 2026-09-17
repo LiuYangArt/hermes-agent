@@ -451,7 +451,7 @@ async def test_run_agent_progress_uses_event_message_id_for_slack_dm(monkeypatch
         "thread_id": "1234567890.000001",
         "message_id": "1234567890.000001",
     }
-    assert adapter.sent[0]["metadata"] == expected_metadata
+    assert adapter.sent[0]["metadata"] == dict(expected_metadata, progress=True)
     assert all(call["metadata"] == expected_metadata for call in adapter.typing)
 
 

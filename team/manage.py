@@ -64,7 +64,8 @@ def verify():
     mismatches = [str(source.relative_to(REPO)) for source,destination in assets()
                   if not destination.is_file() or source.read_bytes()!=destination.read_bytes()]
     for core in ('plugins/platforms/feishu/adapter.py', 'plugins/platforms/feishu/thread_router.py',
-                 'plugins/platforms/feishu/thread_state.py', 'gateway/run.py',
+                 'plugins/platforms/feishu/thread_state.py', 'plugins/platforms/feishu/reply_state.py',
+                 'gateway/run.py', 'gateway/platforms/base.py',
                  'gateway/slash_access.py', 'agent/tool_executor.py', 'model_tools.py',
                  'tools/file_tools.py', 'tools/environments/local.py', 'tools/terminal_tool.py',
                  'tools/code_execution_tool.py', 'tools/memory_tool.py',
@@ -109,7 +110,8 @@ if (config.get('team_governance') or {}).get('enabled'):
     test_count = 0
     try:
         for test in ('test_lark_threads.py','test_helius_image_tool.py','test_thread_conversations.py','test_lark_identity.py',
-                     'test_team_governance.py', 'test_team_sandbox.py', 'test_team_lingo.py', 'test_team_runtime.py'):
+                     'test_team_governance.py', 'test_team_sandbox.py', 'test_team_lingo.py', 'test_team_runtime.py',
+                     'test_lark_reply_replacement.py'):
             try:
                 result = run(['docker','exec','-i','-e','HERMES_HOME='+temp_home,CONTAINER,'/opt/hermes/.venv/bin/python'],input=(TEAM/'tests'/test).read_text(), capture_output=True)
             except subprocess.CalledProcessError as exc:

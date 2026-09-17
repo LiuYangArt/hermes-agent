@@ -3965,7 +3965,7 @@ class TestProcessingReactions(unittest.TestCase):
 
     @staticmethod
     def _event(message_id: str = "om_msg"):
-        return SimpleNamespace(message_id=message_id)
+        return SimpleNamespace(message_id=message_id, source=SimpleNamespace(chat_id="oc_test"))
 
     def _patch_to_thread(self):
         async def _direct(func, *args, **kwargs):
