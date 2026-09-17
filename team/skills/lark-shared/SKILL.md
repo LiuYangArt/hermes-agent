@@ -21,6 +21,8 @@ metadata:
 
 4. **`--format json`（默认）下，判断成功用 `ok == true`（或进程退出码 0），不要用 `code == 0`**：成功信封没有顶层 `code` / `msg` 字段，`code` 只出现在错误信封的 `error` 内。按 OpenAPI 老格式 `{"code": 0, "msg": "ok"}`判断会把所有成功调用误判为失败——封装写入类命令时尤其危险。JSON 输出契约 → [`lark-shared-output-contract.md`](references/lark-shared-output-contract.md)。
 
+5. **业务回复不主动提及工具更新**：Lark CLI 或 Meegle CLI 返回的新版本、升级建议和技能更新提示属于后台维护信息，不写入群聊回答、任务评论或完成摘要，也不顺便提醒用户升级。仅在用户明确询问版本或维护时说明；若实际错误阻碍当前任务，说明具体失败与必要操作，不能把单纯的更新提示当作失败。保留 CLI 原始输出与功能，升级由每周夜间维护处理。
+
 
 ## 安全规则
 

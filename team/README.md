@@ -109,3 +109,9 @@ team_governance:
 消息归属绑定到本次请求及应用身份，后续请求不会复用上一轮消息。最终交付与进度更新串行；即使取消时 SDK 请求尚未返回，也须等待它结束，防止迟到进度覆盖答案。编辑失败返回真实失败结果，由已有交付重试处理，不将未成功编辑当作已回答。Lark 客户端编辑消息的通知行为不能等同于新消息。
 
 对应需求：[Issue #3](https://github.com/LiuYangArt/hermes-agent/issues/3)。专项回归：`.venv/bin/python team/tests/test_lark_reply_replacement.py`（使用临时运行目录，无真实消息发送），已加入 `python3 team/manage.py verify`。本次验收日志及消息 ID 仅保存在 `team/.local/progress-replacement/`。
+
+## CLI 更新提示与夜间维护
+
+业务回复、群聊及任务评论不主动转述 Lark CLI / Meegle CLI 的版本或技能更新提示；仅在用户明确询问维护时说明，真实业务错误仍须如实报告。此约定保存在受管 `lark-shared` 技能及部署的 `data/SOUL.md`，不修改 CLI 功能或过滤其原始输出。已有会话在下一次读取最新技能时获得规则，新建会话同时加载 SOUL 规则。
+
+Codex 后台维护任务 `hermes-cli` 每周日北京时间 03:30 检查这两个 CLI 的官方稳定版本，有更新则先在隔离环境验证、更新 Dockerfile 的固定版本和相关受管技能，再部署并核对。保留本地团队回复及权限约定；正常完成保持安静，仅失败通知，不向 Lark 群发送维护消息。维护证据位于 `team/.local/cli-maintenance/`。定时任务定义由 Codex 管理，不在仓库中另建重复调度器。
