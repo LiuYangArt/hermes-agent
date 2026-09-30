@@ -76,6 +76,18 @@ class TeamGovernanceTests(unittest.TestCase):
         self.assertTrue(governance.is_admin())
         self.assertIsNone(governance.shared_write_denial("memory:add", "memory"))
 
+    def test_members_can_discover_tools_without_gaining_execution_rights(self):
+        self.bind("ou_member")
+        self.assertIsNone(governance.tool_denial("tool_search", {"query": "task attachments"}))
+        self.assertIsNone(governance.tool_denial("tool_describe", {"name": "lark_cli"}))
+        self.assertIsNone(governance.tool_denial("lark_cli", {"resource": "task"}))
+        self.assertIsNotNone(governance.tool_denial("terminal", {"command": "id"}))
+        self.assertIsNotNone(governance.tool_denial("unreviewed_plugin", {}))
+        self.assertIsNone(governance.tool_denial("tool_call", {"name": "lark_cli", "arguments": {"resource": "task"}}))
+        for target in ("terminal", "unreviewed_plugin", "tool_call", "memory", "skill_manage"):
+            self.assertIsNotNone(governance.tool_denial("tool_call", {"name": target, "arguments": {}}))
+        self.assertIsNotNone(governance.tool_denial("tool_call", {"name": "lark_cli", "arguments": "invalid"}))
+
     def test_no_configured_admin_and_missing_message_identity_fail_closed(self):
         self.write_config(admins=())
         self.bind("ou_admin")

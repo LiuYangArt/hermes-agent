@@ -4,7 +4,7 @@ import os
 import sys
 import unittest
 from types import SimpleNamespace as NS
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 sys.path.insert(0, '/opt/hermes')
 import plugins.platforms.feishu.adapter as mod
@@ -39,6 +39,19 @@ class ThreadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mode,'reply')
         self.assertEqual(req.message_id,'om_question')
         self.assertTrue(req.request_body.reply_in_thread)
+    async def test_received_images_keep_original_paths_and_task_upload_guidance(self):
+        paths = ['/opt/data/cache/images/one.jpg', '/opt/data/cache/images/two.png']
+        self.adapter._extract_message_content.return_value = ('用这些图测试', mod.MessageType.TEXT, paths, ['image/jpeg', 'image/png'], [])
+        with patch('team.governance.enabled', return_value=True):
+            event = await self.inbound()
+        self.assertEqual(event.media_urls, paths)
+        for path in paths:
+            self.assertIn(path, event.text)
+        self.assertIn('+upload-attachment', event.text)
+        self.assertIn('仅询问图片内容时不要上传', event.text)
+        with patch('team.governance.enabled', return_value=False):
+            event = await self.inbound()
+        self.assertEqual(event.text, '用这些图测试')
     async def test_followup_keeps_session_and_new_question_is_separate(self):
         first = await self.inbound()
         follow = await self.inbound('om_followup','om_question','omt_actual')

@@ -10,6 +10,13 @@ metadata:
 
 # task (v2)
 
+## 团队图片与任务附件
+
+- 用户在当前任务话题提供图片，要求补充到任务、作为参考或测试素材时，将收到的原始图片上传到已明确的目标任务附件。只写图片描述、本地路径或聊天链接不算交付；仅要求识图时不上传。
+- 使用 `lark_cli`：`resource=task`、`action=+upload-attachment`，传 `--resource-id <任务 GUID>` 和 `--file <上下文给出的原图路径>`。该团队工具会安全处理缓存文件的绝对路径，保持原文件字节，不需要终端搬文件。CLI 直接调用仍要求 cwd 内相对路径。
+- 先读 [上传附件指南](references/lark-task-upload-attachment.md)。原图或目标不明确时说明缺项；上传失败不得以文字替代后宣称完成。
+- 上传成功记录附件 GUID，再读取任务的 `attachments` 核对 GUID、文件名与大小。已上传的不重复传，超时先回读。任务描述可以补充用途，但不得留下成员无法访问的容器路径。
+
 **CRITICAL — 开始前 MUST 先用 Read 工具读取 [`../lark-shared/SKILL.md`](../lark-shared/SKILL.md)，其中包含认证、权限处理**
 
 ## 命令选择与渐进式发现（必读）

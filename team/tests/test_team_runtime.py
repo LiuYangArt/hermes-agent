@@ -1,6 +1,7 @@
 """Real Linux tool execution against a disposable team home and workspace."""
 
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -97,6 +98,74 @@ class TeamRuntimeTests(unittest.TestCase):
         link.symlink_to(outside)
         for args in (["+upload", "--file", str(outside)], ["+upload", "--file=" + str(link)], ["upload", "--file", "file=" + str(outside)], ["upload", "--params", json.dumps({"file": str(outside)})]):
             self.assertIsNotNone(governance.cli_denial("drive", args))
+
+    def attachment_bridge(self):
+        source = Path(governance.__file__).parent / "plugins/lark-cli-bridge/__init__.py"
+        spec = importlib.util.spec_from_file_location("attachment_bridge", source)
+        bridge = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bridge)
+        handlers = {}
+        class Context:
+            def register_tool(self, **kwargs):
+                handlers[kwargs["name"]] = kwargs["handler"]
+        bridge.register(Context())
+        return bridge, handlers["lark_cli"]
+
+    def test_received_image_reaches_member_upload_sandbox_unchanged(self):
+        from gateway.platforms.base import cache_image_from_bytes
+        original = b"\xff\xd8\xff" + bytes(range(256))
+        image = Path(cache_image_from_bytes(original))
+        self.assertTrue(governance.public_path(str(image)))
+        bridge, handle = self.attachment_bridge()
+        run = governance.run_command
+        staged_dirs = []
+        def inspect(command, **kwargs):
+            self.assertEqual(command[-2:], ["--as", "bot"])
+            file_arg = next((word.split("=", 1)[1] for word in command if word.startswith("--file=")), None)
+            if file_arg is None:
+                file_arg = command[command.index("--file") + 1]
+            self.assertFalse(Path(file_arg).is_absolute())
+            staged_dirs.append(Path(kwargs["cwd"]))
+            # Exercise real bubblewrap with the same staged bytes a CLI upload reads.
+            return run([sys.executable, "-c", "import hashlib,pathlib,sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())", file_arg], **kwargs)
+        for flags in (["--file", str(image)], ["--file=" + str(image)]):
+            with mock.patch("team.governance.run_command", side_effect=inspect):
+                result = json.loads(handle({"resource": "task", "action": "+upload-attachment", "arguments": ["--resource-id", "test-guid", *flags]}))
+            self.assertTrue(result["success"], result)
+            self.assertEqual(result["output"].strip(), hashlib.sha256(original).hexdigest())
+        self.assertTrue(all(not path.exists() for path in staged_dirs))
+        self.assertEqual(image.read_bytes(), original)
+
+    def test_task_upload_rejects_secret_symlink_and_missing_file(self):
+        bridge, handle = self.attachment_bridge()
+        link = self.out / "secret.jpg"
+        link.symlink_to(self.home / "config.yaml")
+        with mock.patch("team.governance.run_command", side_effect=AssertionError("must not execute")):
+            for path in (link, self.home / "config.yaml", self.out / "missing.jpg"):
+                result = json.loads(handle({"resource": "task", "action": "+upload-attachment", "arguments": ["--resource-id", "test-guid", "--file", str(path)]}))
+                self.assertFalse(result["success"], result)
+        self.assertFalse(governance.public_path(str(self.home / "cache/private-token")))
+
+    def test_task_upload_cleans_staging_when_execution_fails(self):
+        bridge, handle = self.attachment_bridge()
+        image = self.out / "sample.png"
+        image.write_bytes(b"original")
+        staged = []
+        def fail(command, **kwargs):
+            staged.append(Path(kwargs["cwd"]))
+            raise OSError("test execution failure")
+        with mock.patch("team.governance.run_command", side_effect=fail):
+            result = json.loads(handle({"resource": "task", "action": "+upload-attachment", "arguments": ["--resource-id", "test-guid", "--file", str(image)]}))
+        self.assertFalse(result["success"])
+        self.assertTrue(staged)
+        self.assertTrue(all(not path.exists() for path in staged))
+
+    def test_task_upload_help_and_other_commands_keep_workspace(self):
+        bridge, _ = self.attachment_bridge()
+        for command in (["lark-cli", "task", "+upload-attachment", "--help"], ["lark-cli", "task", "+update"]):
+            with bridge._task_attachment_command(command) as (prepared, cwd):
+                self.assertEqual(prepared, command)
+                self.assertEqual(cwd, "/workspace")
 
 
 if __name__ == "__main__":

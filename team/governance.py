@@ -20,6 +20,7 @@ ARTIFACTS = Path("/workspace/artifacts")
 MEMBER_TOOLS = frozenset({
     "read_file", "search_files", "write_file", "patch", "todo", "clarify",
     "skills_list", "skill_view", "skills_view", "lark_cli", "meegle",
+    "tool_search", "tool_describe",
     "helius_generate_image", "delegate_task", "project_terms",
 })
 MEMBER_COMMANDS = frozenset({
@@ -107,6 +108,12 @@ def shared_write_denial(operation: str, target: str = "shared-assets") -> str | 
 def tool_denial(name: str, args: dict) -> str | None:
     if not enabled():
         return None
+    if name == "tool_call":
+        target, arguments = args.get("name"), args.get("arguments", {})
+        if not isinstance(target, str) or target in {"tool_call", "tool_search", "tool_describe"} or not isinstance(arguments, dict):
+            return "工具转发必须指向一个具体工具，并提供有效参数。"
+        # Deferred calls must enforce the same policy as direct tool calls.
+        return tool_denial(target, arguments)
     if name in {"memory", "skill_manage"}:
         return shared_write_denial(name, str(args.get("name") or args.get("target") or "shared-assets"))
     if is_admin():
@@ -153,7 +160,7 @@ def file_read_denial(path: str, task_id: str = "default") -> str | None:
 
 def public_roots() -> list[Path]:
     home = get_hermes_home()
-    return [Path("/workspace"), *(home / name for name in ("skills", "memories", "imagegen", "image_cache", "audio_cache")), home / "team-settings.md"]
+    return [Path("/workspace"), *(home / name for name in ("skills", "memories", "imagegen", "cache/images", "cache/audio")), home / "team-settings.md"]
 
 
 def public_path(path: str) -> bool:

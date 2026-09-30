@@ -3495,6 +3495,18 @@ class FeishuAdapter(FeishuReplyMixin, ThreadConversationMixin, BasePlatformAdapt
             hint = _build_mention_hint(mentions)
             if hint:
                 text = f"{hint}\n\n{text}" if text else hint
+            from team.governance import enabled as team_enabled
+            images = [path for path, mime in zip(media_urls, media_types) if mime.startswith("image/")]
+            if team_enabled() and images:
+                text += (
+                    "\n\n[本条消息的原始图片文件]\n"
+                    + "\n".join(images)
+                    + "\n若用户要求将这些图补充到已明确的 Lark 任务中（包括作为测试素材），"
+                    "请读取 lark-task 的上传附件指南，使用 lark_cli task +upload-attachment "
+                    "将原文件上传到该任务；--file 可直接传上述路径。"
+                    "图片分析文字和容器路径不能代替任务附件。取得附件 ID 并回读任务附件后再报告完成。"
+                    "仅询问图片内容时不要上传；目标任务不明确时先澄清。"
+                )
 
         # Keep the initiating message and later thread replies in one conversation.
         thread_id = getattr(message, "root_id", None) or getattr(message, "thread_id", None) or None

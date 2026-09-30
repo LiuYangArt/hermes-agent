@@ -1,7 +1,49 @@
 import json
 import subprocess
 import posixpath
+from contextlib import contextmanager
+from pathlib import Path
+import shutil
+import tempfile
 from urllib.parse import unquote, urlsplit
+
+
+@contextmanager
+def _task_attachment_command(command):
+    if command[1:3] != ["task", "+upload-attachment"] or any(
+        word in {"--help", "-h"} for word in command[3:]
+    ):
+        yield command, "/workspace"
+        return
+    from team.governance import ARTIFACTS, public_path
+
+    command = list(command)
+    files = []
+    for index, word in enumerate(command[3:], 3):
+        if word == "--file":
+            if index + 1 >= len(command) or command[index + 1].startswith("--"):
+                raise ValueError("任务附件缺少文件路径。")
+            files.append((index + 1, command[index + 1], False))
+        elif word.startswith("--file="):
+            files.append((index, word.split("=", 1)[1], True))
+    if len(files) != 1 or not files[0][1]:
+        raise ValueError("每次任务附件上传必须指定一个 --file。")
+    index, raw, inline = files[0]
+    source = Path(raw)
+    if not source.is_absolute():
+        source = Path("/workspace") / source
+    if not public_path(str(source)):
+        raise ValueError("任务附件仅限团队公共文件和收到的原始素材，不能上传配置或凭据。")
+    if not source.is_file() or source.stat().st_size > 50 * 1024 * 1024:
+        raise ValueError("任务附件必须是存在的文件，且不超过 50 MB；请勿用图片描述替代原文件。")
+    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    # Keep the original bytes while satisfying the CLI's cwd-relative file contract.
+    with tempfile.TemporaryDirectory(prefix="task-attachment-", dir=ARTIFACTS) as temporary:
+        staged = Path(temporary) / source.name
+        shutil.copyfile(source, staged)
+        relative = "./" + source.name
+        command[index] = "--file=" + relative if inline else relative
+        yield command, temporary
 
 
 def _shared_group_command(command):
@@ -89,9 +131,12 @@ def register(ctx):
             return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)
         try:
             from team.governance import run_command
-            result = run_command(command, capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL, cwd="/workspace")
+            with _task_attachment_command(command) as (prepared, cwd):
+                result = run_command(prepared, capture_output=True, text=True, timeout=90, stdin=subprocess.DEVNULL, cwd=cwd)
         except subprocess.TimeoutExpired:
             return json.dumps({"success": False, "error": "Timeout; verify remote state before retrying writes. Use device-code init/poll --once for login."})
+        except (ValueError, OSError) as exc:
+            return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)
         response = {"success": result.returncode == 0, "exit_code": result.returncode, "output": result.stdout[-40000:]}
         if result.stderr:
             response["diagnostics"] = result.stderr[-8000:]

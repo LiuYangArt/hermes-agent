@@ -110,8 +110,32 @@ team_governance:
 
 对应需求：[Issue #3](https://github.com/LiuYangArt/hermes-agent/issues/3)。专项回归：`.venv/bin/python team/tests/test_lark_reply_replacement.py`（使用临时运行目录，无真实消息发送），已加入 `python3 team/manage.py verify`。本次验收日志及消息 ID 仅保存在 `team/.local/progress-replacement/`。
 
+## Lark 图片补充到任务
+
+在已明确目标任务的话题发送图片并要求用作参考或测试素材时，机器人应将收到的原文件上传到该任务附件，取得附件 GUID 后回读任务核对。识图描述只用于理解图片；任务正文中不能以容器路径代替附件。仅询问图片内容时不自动写入任务，目标不明确时先澄清；多图逐个上传，超时先回读，避免重复附件。
+
+入站消息保留原图路径与上传指引，文本识图和原生视觉模式均可使用。`lark_cli task +upload-attachment` 接受公共缓存中的绝对路径和工作区相对路径，在 `/workspace/artifacts` 创建临时目录，保持原文件字节上传，成功或失败后清理。普通成员只读访问精确的 `cache/images`、`cache/audio` 目录，不开放整个缓存或运行目录；群聊继续使用机器人身份。
+
+普通成员可以搜索当前会话的工具目录和读取使用说明，按需工具转发按实际目标工具检查权限，与直接调用一致；否则按需发现的 `lark_cli` 会在上传之前就被拦住。此目录读取权限不授予终端或未审查插件的执行权限，会话工具范围仍由模型工具分发层核对。
+
+回归包含原图路径、多图、普通成员隔离环境中的字节一致性、私有文件及符号链接拒绝、失败清理。运行 `python3 team/manage.py verify`；专项容器测试为 `team/tests/test_team_runtime.py`，入站专项为 `.venv/bin/python team/tests/test_lark_threads.py`。本次真实任务附件及构建证据保存在 `team/.local/task-image-attachments/`，不提交真实消息或任务 ID。
+
 ## CLI 更新提示与夜间维护
 
 业务回复、群聊及任务评论不主动转述 Lark CLI / Meegle CLI 的版本或技能更新提示；仅在用户明确询问维护时说明，真实业务错误仍须如实报告。此约定保存在受管 `lark-shared` 技能及部署的 `data/SOUL.md`，不修改 CLI 功能或过滤其原始输出。已有会话在下一次读取最新技能时获得规则，新建会话同时加载 SOUL 规则。
 
 Codex 后台维护任务 `hermes-cli` 每周日北京时间 03:30 检查这两个 CLI 的官方稳定版本，有更新则先在隔离环境验证、更新 Dockerfile 的固定版本和相关受管技能，再部署并核对。保留本地团队回复及权限约定；正常完成保持安静，仅失败通知，不向 Lark 群发送维护消息。维护证据位于 `team/.local/cli-maintenance/`。定时任务定义由 Codex 管理，不在仓库中另建重复调度器。
+
+## Lark 管理员查询定时任务
+
+运行配置的 `platform_toolsets.feishu` 需包含 `cronjob`，然后执行 `docker exec -u hermes hermes-team hermes gateway restart` 加载配置并清除旧进程内的工具缓存。管理员可以在原话题中 @Hermi 查询任务名称、启用状态、频率和最近执行结果；普通成员仍由 `team.governance` 拒绝直接或转发调用，不要加入成员工具白名单。
+
+任务数据位于 `/opt/data/cron/jobs.json`，不在 `/workspace`。诊断时可以只读运行 `docker exec -u hermes hermes-team /opt/hermes/.venv/bin/hermes cron list`。终端工具的登录 shell 可能重置 PATH，裸命令 `hermes` 的退出码 127 不代表终端工具不可用；Lark 查询优先使用已注册的 `cronjob`。任务列表的 `last_status` 表示业务任务的最近执行结果，不代表当前查询失败。
+
+每日运行摘要不向定时任务智能体开放 `cronjob` 管理能力；该限制用于阻止后台任务自行增删或触发其他任务。摘要任务使用受管只读脚本 `team/scripts/cron_daily_summary.py` 读取 `jobs.json`、`executions.db` 和已保存输出，再把有限快照交给模型整理。部署路径为 `/opt/data/scripts/cron_daily_summary.py`，由 `python3 team/manage.py install-assets` 更新。
+
+## 管理员业务资产与提示规则
+
+管理员身份仅使用当前 `team_governance.app_id` 绑定的 `platforms.feishu.extra.admins`。管理员可按请求维护 `/opt/data/scripts/`、`/opt/data/triage/`、定时任务配置与业务日志；不要求把这些文件复制到 `/workspace`。凭据、授权文件和会话数据库不属于这项业务资产授权，业务工具继续按已有授权使用凭据。普通成员的公共文件和产物规则不变，后台任务、Tasks/ACP 身份不自动继承管理员权限。
+
+排查“只能访问 /workspace”的拒绝时，先核对运行目录 `data/SOUL.md` 的“权限与安全边界”与上述角色规则是否冲突，再检查 `team_access` 审计和实际工具错误。旧版无条件工作区限制会让模型在调用工具前拒绝，不能把这种自然语言拒绝当成文件系统拒绝证据。更新 SOUL 后重新加载网关，使新建 agent 读取新规则；不修改旧消息历史。文件工具的敏感路径检查属于应用层保护，当前管理员任意终端执行能力不提供操作系统级秘密隔离，不能把提示规则称为强制隔离。

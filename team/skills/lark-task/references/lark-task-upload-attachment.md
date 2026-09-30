@@ -42,6 +42,8 @@ lark-cli task +upload-attachment \
 
 ## Workflow
 
+团队 `lark_cli` 工具支持 `--file` 直接使用收到的原图绝对路径（如 `/opt/data/cache/images/...`）或 `/workspace` 下的相对路径；桥接层校验公共目录并暂存原文件，上传后清理。以下 cwd 限制适用于直接调用 CLI，不需要让群成员搬运服务器文件。已明确目标任务和素材的请求直接执行，不重复索要确认；成功后回读 `task tasks get` 的 `attachments`，核对返回附件 GUID、文件名与大小。
+
 1. Confirm the target task GUID (or applink) and the local file path with the user.
 2. Ensure the file is within the current working directory and its size is ≤ 50 MB; otherwise ask the user to move/split the file.
 3. Determine if this is a task agent: if yes, add `--resource-type task_delivery`.

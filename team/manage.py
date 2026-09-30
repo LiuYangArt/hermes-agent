@@ -16,9 +16,8 @@ REPO = TEAM.parent
 STATE = Path(os.environ.get('HERMES_TEAM_STATE_DIR', str(Path.home()/'.local/share/hermes-team')))
 CONTAINER = 'hermes-team'
 
-
 def assets():
-    for src_dir, dest_dir in [('plugins', 'data/plugins'), ('skills', 'data/skills'), ('acp', 'data/task-bridge'), ('task-bridge', 'task-bridge')]:
+    for src_dir, dest_dir in [('plugins', 'data/plugins'), ('skills', 'data/skills'), ('acp', 'data/task-bridge'), ('task-bridge', 'task-bridge'), ('scripts', 'data/scripts'), ('triage', 'data/scripts/meegle_triage')]:
         for source in sorted((TEAM/src_dir).rglob('*')):
             if source.is_file() and not any(p in {'__pycache__','node_modules','runtime','.local'} for p in source.relative_to(TEAM).parts):
                 yield source, STATE/dest_dir/source.relative_to(TEAM/src_dir)
@@ -111,7 +110,7 @@ if (config.get('team_governance') or {}).get('enabled'):
     try:
         for test in ('test_lark_threads.py','test_helius_image_tool.py','test_thread_conversations.py','test_lark_identity.py',
                      'test_team_governance.py', 'test_team_sandbox.py', 'test_team_lingo.py', 'test_team_runtime.py',
-                     'test_lark_reply_replacement.py'):
+                     'test_lark_reply_replacement.py', 'test_cron_daily_summary.py'):
             try:
                 result = run(['docker','exec','-i','-e','HERMES_HOME='+temp_home,CONTAINER,'/opt/hermes/.venv/bin/python'],input=(TEAM/'tests'/test).read_text(), capture_output=True)
             except subprocess.CalledProcessError as exc:
