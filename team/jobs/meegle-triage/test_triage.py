@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).parent))
-from triage import Pipeline, State, category, source_identity, description, image_urls, fields, document_content
+from triage import Pipeline, State, category, source_identity, description, image_urls, fields, document_content, needs_translation, insert_ai_triage
 
 
 class DeterministicRules(unittest.TestCase):
@@ -29,9 +29,29 @@ class DeterministicRules(unittest.TestCase):
         self.assertTrue(result.startswith('https://github.com/a/b/issues/7\n\nFirst'))
         self.assertNotIn('<img',result)
         for url in image_urls(body): self.assertIn(url,result)
+
+    def test_ai_triage_has_divider_before_issue_body(self):
+        url='https://github.com/a/b/issues/7'
+        decision={'candidate_owners':['mmz'], 'missing_evidence':['定位信息']}
+        result=insert_ai_triage(url+'\n\n原始缺陷描述', url, decision)
+        self.assertEqual(result.count(url), 1)
+        self.assertIn('待补信息：\n- 定位信息\n\n---\n\n原始缺陷描述', result)
+
+    def test_description_keeps_source_url_once(self):
+        url='https://github.com/a/b/issues/7'
+        result=description({'url':url, 'description':url+'\n\n正文\n\n'+url+'\n'})
+        self.assertEqual(result.count(url), 1)
     def test_protocol_stringifies_nested_values(self):
         result=fields({'role_owners':[{'role':'operator','owners':['u']}]})
         self.assertIsInstance(result[0]['field_value'],str)
+
+    def test_translation_rule_only_triggers_for_non_chinese_body(self):
+        self.assertTrue(needs_translation('Crash when opening the inventory'))
+        self.assertFalse(needs_translation('打开背包时崩溃'))
+        self.assertFalse(needs_translation('Crash 打开背包'))
+
+    def test_translation_rule_ignores_title(self):
+        self.assertTrue(needs_translation('Open inventory'))
 
 
 class FakeAPI:
@@ -64,6 +84,7 @@ class TransactionSafety(unittest.TestCase):
         self.api=FakeAPI({'id':'1','name':'bug','description':'original body','state':'pending'})
         self.state=State(self.temp.name)
         self.p=Pipeline(self.c,self.api,self.state,lambda *x:self.fail('unexpected model call'))
+        self.p.translator = lambda body: '翻译后的正文' if needs_translation(body) else body
     def test_dry_run_never_model_or_write(self):
         r=self.p.process(dict(self.issue),False)
         self.assertEqual(r['action'],'create'); self.assertEqual(self.api.writes,[]); self.assertEqual(self.api.created,0)

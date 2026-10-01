@@ -3,19 +3,11 @@ import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timezone
-import importlib.util
 from pathlib import Path
 
-try:
-    from team.scripts.cron_daily_summary import collect
-except ModuleNotFoundError:
-    spec = importlib.util.spec_from_file_location(
-        "cron_daily_summary", "/opt/data/scripts/cron_daily_summary.py"
-    )
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    collect = module.collect
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cron_daily_summary import collect
 
 
 class CronDailySummaryTests(unittest.TestCase):

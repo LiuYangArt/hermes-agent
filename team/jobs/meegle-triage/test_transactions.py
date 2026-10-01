@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 
-from triage import Pipeline, State, CLI, cli_environment, ids
+from triage import Pipeline, State, CLI, cli_environment, ids, needs_translation
 from test_triage import config
 
 
@@ -59,6 +59,7 @@ class Transactions(unittest.TestCase):
 
     def pipeline(self, api):
         p = Pipeline(self.c, api, self.state, lambda *args: self.fail("unneeded model call"))
+        p.translator = lambda body: '翻译后的正文' if needs_translation(body) else body
         p.owner = lambda issue: {"name": "PM", "rule": "unknown", "reason": "insufficient evidence",
                                  "owner_decision_reason": "insufficient_evidence", "candidate_owners": [],
                                  "missing_evidence": ["定位信息"], "user_key": "pm"}
@@ -76,7 +77,19 @@ class Transactions(unittest.TestCase):
         self.assertEqual(api.target["bug-status"], "verify")
         self.assertEqual(api.source["state"], "done-bug")
         self.assertIn("**AI 分诊提示（未核实）**", api.target["description"])
-        self.assertIn("Complete original body", api.target["description"])
+        self.assertIn("翻译后的正文", api.target["description"])
+
+    def test_non_chinese_bug_body_is_translated_but_title_is_preserved(self):
+        api = MemoryAPI()
+        api.source["name"] = "Original English title"
+        api.source["description"] = "Crash when opening the inventory"
+        p = self.pipeline(api)
+        p.translator = lambda body: "翻译后的缺陷正文"
+        result = p.process(self.issue(api), True)
+        self.assertEqual(result["action"], "verified")
+        self.assertEqual(api.target["name"], "Original English title")
+        self.assertIn("翻译后的缺陷正文", api.target["description"])
+        self.assertNotIn("Complete original body", api.target["description"])
 
     def test_source_failure_recovers_without_duplicate_create(self):
         api = MemoryAPI()

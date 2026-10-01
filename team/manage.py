@@ -15,13 +15,53 @@ TEAM = Path(__file__).resolve().parent
 REPO = TEAM.parent
 STATE = Path(os.environ.get('HERMES_TEAM_STATE_DIR', str(Path.home()/'.local/share/hermes-team')))
 CONTAINER = 'hermes-team'
+JOBS = {
+    'meegle-triage': ('jobs/meegle-triage', 'data/scripts/meegle_triage'),
+    'daily-summary': ('jobs/daily-summary', 'data/scripts'),
+}
 
 def assets():
-    for src_dir, dest_dir in [('plugins', 'data/plugins'), ('skills', 'data/skills'), ('acp', 'data/task-bridge'), ('task-bridge', 'task-bridge'), ('scripts', 'data/scripts'), ('triage', 'data/scripts/meegle_triage')]:
+    for src_dir, dest_dir in [('plugins', 'data/plugins'), ('skills', 'data/skills'), ('acp', 'data/task-bridge'), ('task-bridge', 'task-bridge')]:
         for source in sorted((TEAM/src_dir).rglob('*')):
             if source.is_file() and not any(p in {'__pycache__','node_modules','runtime','.local'} for p in source.relative_to(TEAM).parts):
                 yield source, STATE/dest_dir/source.relative_to(TEAM/src_dir)
     yield TEAM/'cleanup-workspace.sh', STATE/'cleanup-workspace.sh'
+
+
+def job_assets(name):
+    source_dir, destination_dir = JOBS[name]
+    for source in sorted((TEAM/source_dir).glob('*.py')):
+        if not source.name.startswith('test_'):
+            yield source, STATE/destination_dir/source.name
+
+
+def verify_job(name):
+    files = list(job_assets(name))
+    if not files:
+        raise SystemExit('Task source is missing: '+name)
+    mismatches = [str(source.relative_to(REPO)) for source, destination in files
+                  if not destination.is_file() or source.read_bytes() != destination.read_bytes()]
+    if mismatches:
+        raise SystemExit('Task source/deployment differences (no files changed):\n'+'\n'.join(mismatches))
+    print(json.dumps({'job': name, 'source_matches_deployment': True, 'files_checked': len(files)}))
+
+
+def install_job(name):
+    if not (STATE/'data/config.yaml').is_file():
+        raise SystemExit('Existing deployment config is required.')
+    files = list(job_assets(name))
+    if not files:
+        raise SystemExit('Task source is missing: '+name)
+    # A task release must be explicit; the core installer never owns these paths.
+    for source, destination in files:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.exists() or source.read_bytes() != destination.read_bytes():
+            with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as f:
+                temporary = Path(f.name)
+                f.write(source.read_bytes())
+            temporary.chmod(source.stat().st_mode & 0o777)
+            temporary.replace(destination)
+    verify_job(name)
 
 
 def run(argv, **kwargs):
@@ -110,7 +150,7 @@ if (config.get('team_governance') or {}).get('enabled'):
     try:
         for test in ('test_lark_threads.py','test_helius_image_tool.py','test_thread_conversations.py','test_lark_identity.py',
                      'test_team_governance.py', 'test_team_sandbox.py', 'test_team_lingo.py', 'test_team_runtime.py',
-                     'test_lark_reply_replacement.py', 'test_cron_daily_summary.py'):
+                     'test_lark_reply_replacement.py'):
             try:
                 result = run(['docker','exec','-i','-e','HERMES_HOME='+temp_home,CONTAINER,'/opt/hermes/.venv/bin/python'],input=(TEAM/'tests'/test).read_text(), capture_output=True)
             except subprocess.CalledProcessError as exc:
@@ -134,6 +174,14 @@ if (config.get('team_governance') or {}).get('enabled'):
 
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command',choices=['install-assets','verify'])
+    parser.add_argument('command',choices=['install-assets','verify','install-job','verify-job'])
+    parser.add_argument('job', nargs='?', choices=JOBS)
     args=parser.parse_args()
-    install() if args.command=='install-assets' else verify()
+    if args.command in {'install-job', 'verify-job'}:
+        if args.job is None:
+            parser.error('A single task name is required.')
+        (install_job if args.command == 'install-job' else verify_job)(args.job)
+    else:
+        if args.job is not None:
+            parser.error('Core commands do not accept a task name.')
+        install() if args.command=='install-assets' else verify()

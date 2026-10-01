@@ -78,6 +78,22 @@ def source_identity(issue):
 
 
 AI_TRIAGE_HEADING = 'AI 分诊提示（未核实）'
+AI_TRIAGE_DIVIDER = '---'
+
+
+def strip_source_url(body, source_url):
+    """Remove a leading source URL so it is rendered exactly once by us."""
+    body = body or ''
+    if body.startswith(source_url):
+        return body[len(source_url):].lstrip('\r\n')
+    return body
+
+
+def strip_rendered_source_url(body, source_url):
+    """Remove every standalone rendered copy; the formatter re-adds one at top."""
+    escaped = re.escape(source_url)
+    body = re.sub(r'(?m)^\s*' + escaped + r'\s*(?:\n|$)', '', body or '')
+    return body.lstrip('\r\n')
 
 
 def ai_triage_block(decision):
@@ -113,17 +129,16 @@ def insert_ai_triage(text, source_url, decision):
     if not allowed:
         raise RuntimeError('Source URL is not an independent first-line link')
     remainder = ''.join(lines[1:]).lstrip('\r\n')
-    return lines[0].rstrip('\r\n') + '\n\n' + block + ('\n\n' + remainder if remainder else '')
+    return lines[0].rstrip('\r\n') + '\n\n' + block + '\n\n' + AI_TRIAGE_DIVIDER + ('\n\n' + remainder if remainder else '')
 
 
 def description(issue, decision=None):
-    body = issue.get('description') or ''
-    if body.startswith(issue['url']): body = body[len(issue['url']):].lstrip('\r\n')
+    body = strip_source_url(issue.get('description') or '', issue['url'])
     def replace(m):
         p = Images(); p.feed(m[0])
         return f'[图片]({p.urls[0]})' if p.urls else m[0]
     body = re.sub(r'<img\b[^>]*>', replace, body, flags=re.I)
-    result = issue['url'] + '\n\n' + body
+    result = issue['url'] + '\n\n' + strip_rendered_source_url(body, issue['url'])
     return insert_ai_triage(result, issue['url'], decision) if decision else result
 
 
@@ -133,6 +148,16 @@ def canonical_text(value):
     value = re.sub(r'!?\[[^\]]*\]\((https?://[^)]+)\)', r'\1', value)
     value = re.sub(r'<[^>]*>', '', value)
     return re.sub(r'\s+', '', value)
+
+
+def needs_translation(value):
+    """Return true only when the issue body contains no Chinese characters.
+
+    Mixed-language bodies are left unchanged so the rule does not translate
+    already-localized content or alter code, URLs, and proper nouns.
+    """
+    text = html.unescape(value or '')
+    return bool(re.search(r'\S', text)) and not bool(re.search(r'[\u3400-\u9fff]', text))
 
 
 def fields(values):
@@ -209,6 +234,7 @@ class State:
 class Pipeline:
     def __init__(self,c,api,state,resolver=None):
         self.c,self.api,self.state,self.resolver=c,api,state,resolver
+        self.translator = None
         self.document=None; self.doc_error=None; self.users={}; self.model_calls=0; self.cache_hits=0
     def validate(self, kinds):
         s=self.c['source']; sm=self.api.metadata(s['type'],list(s['fields'].values()))
@@ -317,16 +343,29 @@ class Pipeline:
         if target and journal.get('phase')=='creating' and journal.get('source')==issue['id'] and journal.get('kind')==kind:
             journal.update(target=target,phase='created'); self.state.save()
         decision=None
+        translated_body=journal.get('translated_body')
         if not target:
             if journal.get('phase')=='creating': raise RuntimeError('Previous create outcome uncertain; remote lookup empty, manual reconciliation required')
             decision=self.owner(issue) if kind=='bug' else {'name':'default','rule':'title-feature-request','reason':'Title matches feature request'}
             target_description=description(issue, decision if decision.get('owner_decision_reason') == 'insufficient_evidence' else None)
+            body = strip_source_url(issue.get('description') or '', issue['url'])
+            if kind == 'bug' and needs_translation(body):
+                if not self.translator:
+                    raise RuntimeError('Non-Chinese bug body requires configured translator')
+                translated = strip_source_url(self.translator(body), issue['url'])
+                if not isinstance(translated, str) or not translated.strip() or (needs_translation(body) and re.search(r'[\u3400-\u9fff]', translated) is None):
+                    raise RuntimeError('Translator returned invalid Simplified Chinese body')
+                target_description = issue['url'] + '\n\n' + translated
+                translated_body = translated
+                if decision and decision.get('owner_decision_reason') == 'insufficient_evidence':
+                    target_description = insert_ai_triage(target_description, issue['url'], decision)
             values={'template':str(t['template']),'name':issue['name'],'description':target_description,tf['status']:t['initial_status']}
             for key in ('url','repository','number','labels'):
                 if key in tf and issue.get(key) is not None: values[tf[key]]=issue[key]
             if kind=='feature': values[tf['source_relation']]=[int(issue['id'])]
             else: values['role_owners']=[{'role':self.c['operator_role'],'owners':[decision['user_key']]}]
-            journal={'phase':'creating','kind':kind,'source':issue['id'],'decision':decision}
+            journal={'phase':'creating','kind':kind,'source':issue['id'],'decision':decision,
+                     'translated_body': translated_body}
             self.state.data['items'][identity]=journal; self.state.save()
             try:
                 response=self.api.call('workitem','create',work_item_type=t['type'],fields=fields(values))
@@ -355,7 +394,7 @@ class Pipeline:
                 raise RuntimeError('AI triage section missing; no source completion') from None
             if verified != (current.get('description') or ''):
                 raise RuntimeError('AI triage section missing; no source completion')
-        original_text=issue['description'].replace(issue['url'], '')
+        original_text=(translated_body if translated_body is not None else issue['description']).replace(issue['url'], '')
         original_text=re.sub(r'<img\b[^>]*>', '', original_text, flags=re.I)
         original_text=re.sub(r'!\[[^\]]*\]\([^)]*\)', '', original_text)
         # Link repair can append pictures, so compare body text independently of image positions.
@@ -422,7 +461,7 @@ class Pipeline:
         return {'results':results,'scanned_pending':len(pending),'model_calls':self.model_calls,'cache_hits':self.cache_hits,'owner_reason_counts':counts}
 
 
-def main(argv=None):
+def main(argv=None, translator=None):
     parser=argparse.ArgumentParser(); parser.add_argument('--config',default='/opt/data/triage/config.json')
     group=parser.add_mutually_exclusive_group(); group.add_argument('--apply',action='store_true'); group.add_argument('--dry-run',action='store_true')
     args=parser.parse_args(argv); config=json.loads(Path(args.config).read_text())
@@ -432,7 +471,9 @@ def main(argv=None):
         except BlockingIOError: print(json.dumps({'skipped':'another run owns lock'})); return 0
         state=State(config['state_dir'])
         from owner_resolver import resolve
-        result=Pipeline(config,CLI(config),state,resolve).run(args.apply)
+        pipeline = Pipeline(config, CLI(config), state, resolve)
+        pipeline.translator = translator
+        result = pipeline.run(args.apply)
         print(json.dumps(result,ensure_ascii=False,indent=2))
         return 1 if any(x['action']=='failed' for x in result['results']) else 0
 

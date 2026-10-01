@@ -3,6 +3,7 @@
 - 此目录保存团队定制源文件。用户明确要求维护现有 main，不开新分支、不推送到上游仓库。
 - 运行数据、配置、凭据、授权、聊天记录、任务记录不进 Git；`.local/` 同时被 Git 和 Docker 忽略。
 - 主测试入口：`python3 team/manage.py verify`，核对已部署源码并运行团队标准库 unittest，输出实际测试数量；修改 Core 行为时追加相关上游 `scripts/run_tests.sh` 检查。
+- 定时任务脚本按任务包隔离在 `team/jobs/<name>/`；使用 `python3 team/manage.py install-job <name>` 和 `verify-job <name>` 单独发布/核对，普通 `install-assets` 不得覆盖定时任务脚本。
 - 构建：`docker compose -f team/compose.yaml build --build-arg HERMES_GIT_SHA="$(git rev-parse HEAD)"`。
 - 部署前安装受管资产：`python3 team/manage.py install-assets`；然后 `docker compose -f team/compose.yaml up -d --no-deps hermes-team`。
 - 正式服务包括 hermes-team 和 com.hermes-team.lark-acp / com.hermes-team.lark-tasks，不能当调试进程结束。

@@ -132,7 +132,9 @@ Codex 后台维护任务 `hermes-cli` 每周日北京时间 03:30 检查这两�
 
 任务数据位于 `/opt/data/cron/jobs.json`，不在 `/workspace`。诊断时可以只读运行 `docker exec -u hermes hermes-team /opt/hermes/.venv/bin/hermes cron list`。终端工具的登录 shell 可能重置 PATH，裸命令 `hermes` 的退出码 127 不代表终端工具不可用；Lark 查询优先使用已注册的 `cronjob`。任务列表的 `last_status` 表示业务任务的最近执行结果，不代表当前查询失败。
 
-每日运行摘要不向定时任务智能体开放 `cronjob` 管理能力；该限制用于阻止后台任务自行增删或触发其他任务。摘要任务使用受管只读脚本 `team/scripts/cron_daily_summary.py` 读取 `jobs.json`、`executions.db` 和已保存输出，再把有限快照交给模型整理。部署路径为 `/opt/data/scripts/cron_daily_summary.py`，由 `python3 team/manage.py install-assets` 更新。
+每日运行摘要不向定时任务智能体开放 `cronjob` 管理能力；该限制用于阻止后台任务自行增删或触发其他任务。摘要任务使用自己的脚本目录 `team/jobs/daily-summary/`，读取 `jobs.json`、`executions.db` 和已保存输出，再把有限快照交给模型整理。部署路径为 `/opt/data/scripts/cron_daily_summary.py`，必须用 `python3 team/manage.py install-job daily-summary` 单独更新；普通 `install-assets` 不会触碰它。
+
+Meegle 分诊同样是独立任务包，源码位于 `team/jobs/meegle-triage/`，部署路径为 `/opt/data/scripts/meegle_triage/`。更新它使用 `python3 team/manage.py install-job meegle-triage`；普通 Core、Lark 或其他定时任务资产更新不会覆盖它。部署前后分别用 `verify-job <name>` 检查该任务包的源文件与运行文件一致。
 
 ## 管理员业务资产与提示规则
 
