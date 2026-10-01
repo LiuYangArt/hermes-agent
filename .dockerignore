@@ -111,3 +111,4 @@ team/.local/
 team/**/runtime/
 team/**/node_modules/
 team/tests/
+team/jobs/
